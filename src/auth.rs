@@ -14,7 +14,7 @@ pub struct Client {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Auth {
-    access_token: String,
+    pub access_token: String,
     token_type: String,
     expires_in: i32,
     scope: String,
@@ -43,7 +43,7 @@ impl Client {
         body.insert("grant_type", &grant_type);
 
         let client = reqwest::Client::new();
-        let response = client.post("https://www.reddit.com/api/v1/access_token")
+        let auth = client.post("https://www.reddit.com/api/v1/access_token")
             .header(USER_AGENT, &self.user_agent)
             .header(AUTHORIZATION, format!("Basic {}", basic_token))
             .form(&body)
@@ -52,7 +52,7 @@ impl Client {
             .json::<Auth>()
             .await?;
 
-        Ok(response)
+        Ok(auth)
 
     }
 }
