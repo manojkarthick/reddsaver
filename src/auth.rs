@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use reqwest::header::{USER_AGENT, AUTHORIZATION};
 use base64;
 use serde::{Deserialize, Serialize};
+use crate::errors::ReddSaverError;
 
 
 pub struct Client {
@@ -32,7 +33,7 @@ impl Client {
         }
     }
 
-    pub async fn login(&self) -> Result<Auth, Box<dyn std::error::Error>> {
+    pub async fn login(&self) -> Result<Auth, ReddSaverError> {
 
         let basic_token = base64::encode(format!("{}:{}", self.client_id, self.client_secret));
         let grant_type = String::from("password");

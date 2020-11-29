@@ -3,6 +3,7 @@ use crate::about::UserAbout;
 use reqwest::header::USER_AGENT;
 use crate::API_USER_AGENT;
 use crate::saved::UserSaved;
+use crate::errors::ReddSaverError;
 
 pub struct User<'a> {
     auth: &'a Auth,
@@ -17,7 +18,7 @@ impl<'a> User<'a> {
         }
     }
 
-    pub async fn about(&self) -> Result<UserAbout, Box<dyn std::error::Error>> {
+    pub async fn about(&self) -> Result<UserAbout, ReddSaverError> {
 
         let url = format!("https://oauth.reddit.com/user/{}/about", self.name);
         let client = reqwest::Client::new();
@@ -33,7 +34,7 @@ impl<'a> User<'a> {
         Ok(response)
     }
 
-    pub async fn saved(&self, limit: &i32) -> Result<UserSaved, Box<dyn std::error::Error>> {
+    pub async fn saved(&self, limit: &i32) -> Result<UserSaved, ReddSaverError> {
 
         let url = format!("https://oauth.reddit.com/user/{}/saved", self.name);
         let client = reqwest::Client::new();
