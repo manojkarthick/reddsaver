@@ -1,7 +1,6 @@
-mod about;
 mod auth;
 mod errors;
-mod saved;
+mod structures;
 mod user;
 mod utils;
 
@@ -16,11 +15,11 @@ use std::env;
 
 // *Features to add:*
 //
-// todo: logging
+// [x] todo: logging
 // todo: restart later? (or ignore if saved)
 // todo: iterator + limits + pagination (current max is 100)
 // todo: generic thing struct
-// todo: add rust
+// [x] todo: add rustfmt
 // todo: github actions CI
 // todo: github artifacts
 // todo: publish to crates.io
@@ -37,8 +36,10 @@ static API_USER_AGENT: &str = "com.manojkarthick.reddsaver:v0.0.1";
 
 #[tokio::main]
 async fn main() -> Result<(), ReddSaverError> {
+    // initialize environment from the .env file
     dotenv().ok();
 
+    // initialize logger for the app and set logging level to info if no environment variable present
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
     let client_id = env::var("CLIENT_ID")?;
@@ -48,6 +49,7 @@ async fn main() -> Result<(), ReddSaverError> {
     let user_agent = String::from(API_USER_AGENT);
     let num_images: i32 = env::var("NUM_IMAGES")?.parse()?;
 
+    // login to reddit using the credentials provided and get API bearer token
     let auth = Client::new(
         &client_id,
         &client_secret,
@@ -60,6 +62,7 @@ async fn main() -> Result<(), ReddSaverError> {
     info!("Successfully logged in to Reddit as {}", username);
     debug!("Authentication details: {:#?}", auth);
 
+    // get information about the user to display
     let user = User::new(&auth, &username);
 
     let user_info = user.about().await?;
@@ -69,10 +72,10 @@ async fn main() -> Result<(), ReddSaverError> {
     info!("Comment Karma: {:#?}", user_info.data.comment_karma);
     info!("Link Karma: {:#?}", user_info.data.link_karma);
 
+    // get the saved posts for this particular user
     let saved_posts = user.saved(&num_images).await?;
     debug!("Saved posts: {:#?}", saved_posts);
 
-    // 9s
     get_images_parallel(&saved_posts).await?;
 
     Ok(())

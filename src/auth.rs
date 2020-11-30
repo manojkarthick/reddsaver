@@ -4,19 +4,29 @@ use reqwest::header::{AUTHORIZATION, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// To generate the Reddit Client ID and secret, visit: https://www.reddit.com/prefs/apps
 pub struct Client<'a> {
+    /// Client ID for the application
     client_id: &'a str,
+    /// Client Secret for the application
     client_secret: &'a str,
+    /// Login username
     username: &'a str,
+    /// Login password
     password: &'a str,
+    /// Unique User agent string
     user_agent: &'a str,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Auth {
+    /// The generated bearer access token for the application
     pub access_token: String,
+    /// Type of access token: "bearer"
     token_type: String,
+    /// Expiry duration. Defaults to 3600/1 hour
     expires_in: i32,
+    /// Scope of the access token. This app requires * scope
     scope: String,
 }
 
@@ -50,7 +60,11 @@ impl<'a> Client<'a> {
         let auth = client
             .post("https://www.reddit.com/api/v1/access_token")
             .header(USER_AGENT, self.user_agent)
+            // base64 encoded <clientID>:<clientSecret> should be sent as a basic token
+            // along with the body of the message
             .header(AUTHORIZATION, format!("Basic {}", basic_token))
+            // make sure the username and password is sent as form encoded values
+            // the API does not accept JSON body when trying to obtain a bearer token
             .form(&body)
             .send()
             .await?
