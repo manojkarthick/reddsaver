@@ -3,6 +3,7 @@ use crate::saved::UserSaved;
 
 use image::DynamicImage;
 
+use log::info;
 use std::fs;
 
 #[allow(dead_code)]
@@ -13,14 +14,14 @@ pub async fn get_images(saved: &UserSaved) -> Result<(), ReddSaverError> {
             let extension = String::from(url.split('.').last().unwrap_or("unknown"));
             let subreddit = child_cloned.data.subreddit;
             if extension == "jpg" || extension == "png" {
-                println!("Downloading image from URL: {}", url);
+                info!("Downloading image from URL: {}", url);
                 let image_bytes = reqwest::get(&url).await?.bytes().await?;
                 let image = match image::load_from_memory(&image_bytes) {
                     Ok(image) => image,
                     Err(_e) => return Err(ReddSaverError::CouldNotCreateImageError),
                 };
-                save_image(&image, &url, &subreddit, &extension)?;
-                println!("Saved!");
+                let file_name = save_image(&image, &url, &subreddit, &extension)?;
+                info!("Successfully saved image: {}", file_name);
             }
         }
     }
@@ -33,22 +34,22 @@ fn save_image(
     url: &str,
     subreddit: &str,
     extension: &str,
-) -> Result<(), ReddSaverError> {
+) -> Result<String, ReddSaverError> {
     match fs::create_dir_all(format!("data/{}", subreddit)) {
         Ok(_) => (),
         Err(_e) => return Err(ReddSaverError::CouldNotCreateDirectory),
     }
 
     let hash = md5::compute(url);
-    match image.save(format!("data/{}/img-{:x}.{}", subreddit, hash, extension)) {
+    let file_name = format!("data/{}/img-{:x}.{}", subreddit, hash, extension);
+    match image.save(&file_name) {
         Ok(_) => (),
         Err(_e) => return Err(ReddSaverError::CouldNotSaveImageError),
     }
 
-    Ok(())
+    Ok(file_name)
 }
 
-//noinspection RsExternalLinter,RsExternalLinter
 pub async fn get_images_parallel(saved: &UserSaved) -> Result<(), ReddSaverError> {
     let tasks: Vec<_> = saved
         .data
@@ -65,21 +66,23 @@ pub async fn get_images_parallel(saved: &UserSaved) -> Result<(), ReddSaverError
                 let url = item.data.url.unwrap();
                 let extension = String::from(url.split('.').last().unwrap_or("unknown"));
                 let subreddit = item.data.subreddit;
-                println!("Downloading image from URL: {}", url);
+                info!("Downloading image from URL: {}", url);
                 let image_bytes = reqwest::get(&url).await?.bytes().await?;
                 let image = match image::load_from_memory(&image_bytes) {
                     Ok(image) => image,
                     Err(_e) => return Err(ReddSaverError::CouldNotCreateImageError),
                 };
-                save_image(&image, &url, &subreddit, &extension)?;
-                println!("Saved!");
+                let file_name = save_image(&image, &url, &subreddit, &extension)?;
+                info!("Successfully saved image: {}", file_name);
                 Ok::<(), ReddSaverError>(())
             })
         })
         .collect();
 
     for task in tasks {
-        task.await?;
+        if let Err(e) = task.await? {
+            return Err(e);
+        }
     }
 
     Ok(())

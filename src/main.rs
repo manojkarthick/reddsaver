@@ -10,6 +10,8 @@ use crate::user::User;
 use crate::utils::get_images_parallel;
 use auth::Client;
 use dotenv::dotenv;
+use env_logger::Env;
+use log::{debug, info};
 use std::env;
 
 // *Features to add:*
@@ -37,6 +39,8 @@ static API_USER_AGENT: &str = "com.manojkarthick.reddsaver:v0.0.1";
 async fn main() -> Result<(), ReddSaverError> {
     dotenv().ok();
 
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+
     let client_id = env::var("CLIENT_ID")?;
     let client_secret = env::var("CLIENT_SECRET")?;
     let username = env::var("USERNAME")?;
@@ -53,16 +57,20 @@ async fn main() -> Result<(), ReddSaverError> {
     )
     .login()
     .await?;
-    println!("Successfully logged in!");
-    println!("{:#?}", auth);
+    info!("Successfully logged in to Reddit as {}", username);
+    debug!("Authentication details: {:#?}", auth);
 
-    let mellinam = User::new(&auth, &username);
+    let user = User::new(&auth, &username);
 
-    let user_info = mellinam.about().await?;
-    println!("{:#?}", user_info.data.name);
+    let user_info = user.about().await?;
+    info!("The user details are: ");
+    info!("Account name: {:#?}", user_info.data.name);
+    info!("Account ID: {:#?}", user_info.data.id);
+    info!("Comment Karma: {:#?}", user_info.data.comment_karma);
+    info!("Link Karma: {:#?}", user_info.data.link_karma);
 
-    let saved_posts = mellinam.saved(&num_images).await?;
-    println!("{:#?}", saved_posts);
+    let saved_posts = user.saved(&num_images).await?;
+    debug!("Saved posts: {:#?}", saved_posts);
 
     // 9s
     get_images_parallel(&saved_posts).await?;
