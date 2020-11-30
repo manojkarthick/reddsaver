@@ -15,6 +15,5 @@ pub enum ReddSaverError {
     #[error("Unable to join tasks")]
     TokioJoinError(#[from] tokio::task::JoinError),
     #[error("Could not save string to int")]
-    IntegerConversionError(#[from] std::num::ParseIntError)
-
+    IntegerConversionError(#[from] std::num::ParseIntError),
 }

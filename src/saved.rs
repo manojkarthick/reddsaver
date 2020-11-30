@@ -1,4 +1,4 @@
-use serde::{Deserialize};
+use serde::Deserialize;
 use serde_json::Value;
 
 #[derive(Deserialize, Debug)]
