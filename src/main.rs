@@ -16,21 +16,22 @@ use std::env;
 // *Features to add:*
 //
 // [x] todo: logging
-// todo: restart later? (or ignore if saved)
-// todo: iterator + limits + pagination (current max is 100)
-// todo: generic thing struct
+// [ ] todo: restart later? (or ignore if saved)
+// [ ] todo: iterator + limits + pagination (current max is 100)
+// [-] todo: generic thing struct
 // [x] todo: add rustfmt
-// todo: github actions CI
-// todo: github artifacts
-// todo: publish to crates.io
-// todo: Dockerfile
-// todo: Thread safe counters
-// todo: Documentation
-// todo: license
-// todo: readme
-// todo: test?
-// todo: nix?
-// todo: progress bar?
+// [ ] todo: github actions CI
+// [ ] todo: github artifacts
+// [ ] todo: publish to crates.io
+// [ ] todo: Dockerfile
+// [ ] todo: Thread safe counters
+// [ ] todo: Documentation
+// [ ] todo: license
+// [ ] todo: readme
+// [ ] todo: test?
+// [ ] todo: nix?
+// [ ] todo: progress bar?
+// [ ] todo: cli argument to select .env file, --output, --limit
 
 static API_USER_AGENT: &str = "com.manojkarthick.reddsaver:v0.0.1";
 
@@ -72,11 +73,14 @@ async fn main() -> Result<(), ReddSaverError> {
     info!("Comment Karma: {:#?}", user_info.data.comment_karma);
     info!("Link Karma: {:#?}", user_info.data.link_karma);
 
+    info!("Starting data gathering from Reddit. This might take some time. Hold on....");
     // get the saved posts for this particular user
     let saved_posts = user.saved(&num_images).await?;
-    debug!("Saved posts: {:#?}", saved_posts);
+    debug!("Saved Posts: {:#?}", saved_posts);
 
-    get_images_parallel(&saved_posts).await?;
+    for collection in &saved_posts {
+        get_images_parallel(&collection).await?;
+    }
 
     Ok(())
 }
