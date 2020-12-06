@@ -36,14 +36,13 @@ impl<'a> User<'a> {
         Ok(response)
     }
 
-    pub async fn saved(&self, limit: &i32) -> Result<Vec<UserSaved>, ReddSaverError> {
+    pub async fn saved(&self) -> Result<Vec<UserSaved>, ReddSaverError> {
         let client = reqwest::Client::new();
 
         let mut complete = false;
         let mut processed = 0;
         let mut after: Option<String> = None;
         let mut saved: Vec<UserSaved> = vec![];
-
         while !complete {
             // during the first call to the API, we would not provide the after query parameter
             // in subsequent calls, we use the value for after from the response of the
@@ -62,11 +61,8 @@ impl<'a> User<'a> {
                 .get(&url)
                 .bearer_auth(&self.auth.access_token)
                 .header(USER_AGENT, API_USER_AGENT)
-                // pass a limit to the API if provided by the user
-                // currently the API returns a maximum of 100 posts in a single request
-                // todo: add options to exit prematurely if asked for?
-                // todo: get all posts by iterating
-                .query(&[("limit", limit)])
+                // the maximum number of items returned by the API in a single request is 100
+                .query(&[("limit", 100)])
                 .send()
                 .await?
                 .json::<UserSaved>()
@@ -93,7 +89,6 @@ impl<'a> User<'a> {
             }
         }
 
-        // return the vector the caller method for downloading
         Ok(saved)
     }
 }
