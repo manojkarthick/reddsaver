@@ -1,14 +1,34 @@
 use crate::errors::ReddSaverError;
-use crate::structures::{UserSaved, Summary};
+use crate::structures::{Summary, UserSaved};
 
-use futures::stream::{TryStreamExt, FuturesUnordered};
+use futures::stream::{FuturesUnordered, TryStreamExt};
 
 use image::DynamicImage;
+use rand;
 
-use log::{debug, info, warn, error};
+use log::{debug, error, info, warn};
+use random_names::RandomName;
 use std::fs;
 use std::path::Path;
-use std::sync::{Mutex, Arc};
+use std::sync::{Arc, Mutex};
+use rand::Rng;
+
+/// Generate user agent string of the form <name>:<version>.
+///If no arguments passed generate random name and number
+pub fn get_user_agent_string(name: Option<String>, version: Option<String>) -> String {
+    if let (Some(v), Some(n)) = (version, name) {
+        format!("{}:{}", n, v)
+    } else {
+        let random_name = RandomName::new()
+            .to_string()
+            .replace(" ", "")
+            .to_lowercase();
+
+        let mut rng = rand::thread_rng();
+        let random_version = rng.gen::<u32>();
+        format!("{}:{}", random_name, random_version)
+    }
+}
 
 // this method has the same outcome as the `get_images_parallel` method
 // this was an initial implementation and is left here for benchmarking purposes
@@ -35,11 +55,7 @@ use std::sync::{Mutex, Arc};
 // }
 
 /// Takes a binary image blob and save it to the filesystem
-fn save_image(
-    image: &DynamicImage,
-    file_name: &str,
-    url: &str,
-) -> Result<bool, ReddSaverError> {
+fn save_image(image: &DynamicImage, file_name: &str, url: &str) -> Result<bool, ReddSaverError> {
     // create directory if it does not already exist
     // the directory is created relative to the current working directory
     let directory = Path::new(file_name).parent().unwrap();
@@ -54,28 +70,36 @@ fn save_image(
             error!("Could not save image {} from url {}", file_name, url);
             // return Err(ReddSaverError::CouldNotSaveImageError(String::from(file_name)))
             return Ok(false);
-        },
+        }
     }
 
     Ok(true)
 }
 
+/// Check if a particular path is present on the filesystem
 pub fn check_path_present(file_path: &str) -> bool {
     Path::new(file_path).exists()
 }
 
+/// Generate a file name in the right format that Reddsaver expects
 fn generate_file_name(url: &str, data_directory: &str, subreddit: &str, extension: &str) -> String {
     // create a hash for the image using the URL the image is located at
     // this helps to make sure the image download always writes the same file
     // name irrespective of how many times it's run. If run more than once, the
     // image is overwritten by this method
     let hash = md5::compute(url);
-    format!("{}/{}/img-{:x}.{}", data_directory, subreddit, hash, extension)
+    format!(
+        "{}/{}/img-{:x}.{}",
+        data_directory, subreddit, hash, extension
+    )
 }
 
-pub async fn get_images_parallel(saved: &UserSaved, data_directory: &str) -> Result<Summary, ReddSaverError> {
-
-    let summary = Arc::new(Mutex::new(Summary{
+/// Download and save images from Reddit in parallel
+pub async fn get_images_parallel(
+    saved: &UserSaved,
+    data_directory: &str,
+) -> Result<Summary, ReddSaverError> {
+    let summary = Arc::new(Mutex::new(Summary {
         images_supported: 0,
         images_downloaded: 0,
         images_skipped: 0,
@@ -114,7 +138,9 @@ pub async fn get_images_parallel(saved: &UserSaved, data_directory: &str) -> Res
                     let image_bytes = reqwest::get(&url).await?.bytes().await?;
                     let image = match image::load_from_memory(&image_bytes) {
                         Ok(image) => image,
-                        Err(_e) => return Err(ReddSaverError::CouldNotCreateImageError(url, file_name)),
+                        Err(_e) => {
+                            return Err(ReddSaverError::CouldNotCreateImageError(url, file_name))
+                        }
                     };
                     let save_status = save_image(&image, &file_name, &url)?;
                     if save_status {
@@ -134,8 +160,14 @@ pub async fn get_images_parallel(saved: &UserSaved, data_directory: &str) -> Res
     let local_summary = *summary.lock().unwrap();
 
     debug!("Collection statistics: ");
-    debug!("Number of supported images: {}", local_summary.images_supported);
-    debug!("Number of images downloaded: {}", local_summary.images_downloaded);
+    debug!(
+        "Number of supported images: {}",
+        local_summary.images_supported
+    );
+    debug!(
+        "Number of images downloaded: {}",
+        local_summary.images_downloaded
+    );
     debug!("Number of images skipped: {}", local_summary.images_skipped);
 
     let x = Ok(local_summary);

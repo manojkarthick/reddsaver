@@ -113,7 +113,7 @@ pub struct PostData {
 pub struct Summary {
     pub images_downloaded: i32,
     pub images_skipped: i32,
-    pub images_supported: i32
+    pub images_supported: i32,
 }
 
 impl Add for Summary {

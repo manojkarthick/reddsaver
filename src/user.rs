@@ -1,7 +1,7 @@
 use crate::auth::Auth;
 use crate::errors::ReddSaverError;
 use crate::structures::{UserAbout, UserSaved};
-use crate::API_USER_AGENT;
+use crate::utils::get_user_agent_string;
 use log::info;
 use reqwest::header::USER_AGENT;
 use std::borrow::Borrow;
@@ -27,7 +27,7 @@ impl<'a> User<'a> {
             .get(&url)
             .bearer_auth(&self.auth.access_token)
             // reddit will forbid you from accessing the API if the provided user agent is not unique
-            .header(USER_AGENT, API_USER_AGENT)
+            .header(USER_AGENT, get_user_agent_string(None, None))
             .send()
             .await?
             .json::<UserAbout>()
@@ -60,7 +60,7 @@ impl<'a> User<'a> {
             let response = client
                 .get(&url)
                 .bearer_auth(&self.auth.access_token)
-                .header(USER_AGENT, API_USER_AGENT)
+                .header(USER_AGENT, get_user_agent_string(None, None))
                 // the maximum number of items returned by the API in a single request is 100
                 .query(&[("limit", 100)])
                 .send()

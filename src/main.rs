@@ -5,20 +5,16 @@ mod user;
 mod utils;
 
 use crate::errors::ReddSaverError;
+use crate::errors::ReddSaverError::DataDirNotFound;
+use crate::structures::Summary;
 use crate::user::User;
-use crate::utils::{get_images_parallel, check_path_present};
+use crate::utils::{check_path_present, get_images_parallel, get_user_agent_string};
 use auth::Client;
 use dotenv::dotenv;
 use env_logger::Env;
-// use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, info};
-// use std::convert::TryFrom;
 use std::env;
-use crate::errors::ReddSaverError::DataDirNotFound;
-use crate::structures::Summary;
 use std::ops::Add;
-
-static API_USER_AGENT: &str = "com.manojkarthick.reddsaver:v0.1.0";
 
 #[tokio::main]
 async fn main() -> Result<(), ReddSaverError> {
@@ -32,7 +28,7 @@ async fn main() -> Result<(), ReddSaverError> {
     let client_secret = env::var("CLIENT_SECRET")?;
     let username = env::var("USERNAME")?;
     let password = env::var("PASSWORD")?;
-    let user_agent = String::from(API_USER_AGENT);
+    let user_agent = get_user_agent_string(None, None);
     let data_directory = env::var("DATA_DIR")?;
 
     if !check_path_present(&data_directory) {
@@ -67,7 +63,6 @@ async fn main() -> Result<(), ReddSaverError> {
     let saved_posts = user.saved().await?;
     debug!("Saved Posts: {:#?}", saved_posts);
 
-
     let mut full_summary = Summary {
         images_supported: 0,
         images_downloaded: 0,
@@ -79,12 +74,17 @@ async fn main() -> Result<(), ReddSaverError> {
 
     info!("#####################################");
     info!("Download Summary:");
-    info!("Number of supported images: {}", full_summary.images_supported);
-    info!("Number of images downloaded: {}", full_summary.images_downloaded);
+    info!(
+        "Number of supported images: {}",
+        full_summary.images_supported
+    );
+    info!(
+        "Number of images downloaded: {}",
+        full_summary.images_downloaded
+    );
     info!("Number of images skipped: {}", full_summary.images_skipped);
     info!("#####################################");
     info!("FIN.");
 
     Ok(())
 }
-
