@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::ops::Add;
 
 /// Data structure that represents a user's info
 #[derive(Debug, Serialize, Deserialize)]
@@ -106,4 +107,23 @@ pub struct PostData {
     pub title: Option<String>,
     /// A timestamp of the time when the post was created, in **UTC**.
     pub created_utc: Value,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Summary {
+    pub images_downloaded: i32,
+    pub images_skipped: i32,
+    pub images_supported: i32
+}
+
+impl Add for Summary {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            images_supported: self.images_supported + rhs.images_supported,
+            images_downloaded: self.images_downloaded + rhs.images_downloaded,
+            images_skipped: self.images_skipped + rhs.images_skipped,
+        }
+    }
 }
