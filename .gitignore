@@ -1,7 +1,8 @@
 /target
-.env
+*.env
 .idea/
 .DS_Store
 data/
 reddsaver/
 *.iml
+.dockerignore
