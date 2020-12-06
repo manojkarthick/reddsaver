@@ -18,36 +18,7 @@ use crate::errors::ReddSaverError::DataDirNotFound;
 use crate::structures::Summary;
 use std::ops::Add;
 
-// *Features to add:*
-//
-// [x] todo: logging
-// [x] todo: restart later? (or ignore if saved)
-// [x] todo: iterator + pagination (current max is 100)
-// [x] todo: download all images
-// [-] todo: generic thing struct
-// [x] todo: add rustfmt
-// [x] todo: Thread safe counters
-
-// [ ] todo: github actions CI
-// [ ] todo: github artifacts
-// [ ] todo: publish to crates.io
-// [ ] todo: Dockerfile
-// [ ] todo: Documentation
-// [ ] todo: license
-// [ ] todo: readme
-// [ ] todo: test?
-// [ ] todo: nix?
-// [-] todo: progress bar?
-// [ ] todo: filter image details in parallel and denest
-// [ ] todo: cli argument to select .env file, --output, --limit
-///
-// Image features
-//
-// [ ] todo: gallery
-// [ ] todo: Parse from raw imgur links
-// [ ] todo: gifs?
-
-static API_USER_AGENT: &str = "com.manojkarthick.reddsaver:v0.0.1";
+static API_USER_AGENT: &str = "com.manojkarthick.reddsaver:v0.1.0";
 
 #[tokio::main]
 async fn main() -> Result<(), ReddSaverError> {
