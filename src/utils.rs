@@ -9,12 +9,18 @@ use rand;
 use log::{debug, error, info, warn};
 use rand::Rng;
 use random_names::RandomName;
+use std::borrow::Borrow;
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+static URL_EXTENSION_JPG: &str = "jpg";
+static URL_EXTENSION_PNG: &str = "png";
+static URL_PREFIX_REDDIT_GALLERY: &str = "reddit.com/gallery";
+static URL_PREFIX_REDDIT_GALLERY_ITEM: &str = "https://i.redd.it";
+
 /// Generate user agent string of the form <name>:<version>.
-///If no arguments passed generate random name and number
+/// If no arguments passed generate random name and number
 pub fn get_user_agent_string(name: Option<String>, version: Option<String>) -> String {
     if let (Some(v), Some(n)) = (version, name) {
         format!("{}:{}", n, v)
@@ -30,8 +36,8 @@ pub fn get_user_agent_string(name: Option<String>, version: Option<String>) -> S
     }
 }
 
-// this method has the same outcome as the `get_images_parallel` method
-// this was an initial implementation and is left here for benchmarking purposes
+// this method had the same outcome as the `get_images_parallel` method initially
+// this was a naive implementation and is left here for reference
 // pub async fn get_images(saved: &UserSaved) -> Result<(), ReddSaverError> {
 //     for child in saved.data.children.iter() {
 //         let child_cloned = child.clone();
@@ -67,8 +73,7 @@ fn save_image(image: &DynamicImage, file_name: &str, url: &str) -> Result<bool, 
     match image.save(&file_name) {
         Ok(_) => info!("Successfully saved image: {} from url {}", file_name, url),
         Err(_e) => {
-            error!("Could not save image {} from url {}", file_name, url);
-            // return Err(ReddSaverError::CouldNotSaveImageError(String::from(file_name)))
+            error!("Could not save image from url {} to {}", url, file_name);
             return Ok(false);
         }
     }
@@ -94,6 +99,44 @@ fn generate_file_name(url: &str, data_directory: &str, subreddit: &str, extensio
     )
 }
 
+/// Status of image processing
+enum ImageStatus {
+    /// If we are able to successfully download the image
+    Downloaded,
+    /// If we skipping downloading the image due to it already being present
+    /// or because we could not find the image or because we are unable to decode
+    /// the image
+    Skipped,
+}
+
+/// Helper function that downloads and saves a single image from Reddit or Imgur
+async fn process_single_image(url: &str, file_name: &str) -> Result<ImageStatus, ReddSaverError> {
+    if check_path_present(&file_name) {
+        warn!("Image from url {} already downloaded. Skipping...", url);
+        return Ok(ImageStatus::Skipped);
+    // summary_arc.lock().unwrap().images_skipped += 1;
+    } else {
+        let image_bytes = reqwest::get(url).await?.bytes().await?;
+        match image::load_from_memory(&image_bytes) {
+            Ok(image) => {
+                let save_status = save_image(&image, &file_name, &url)?;
+                if save_status {
+                    return Ok(ImageStatus::Downloaded);
+                } else {
+                    return Ok(ImageStatus::Skipped);
+                }
+            }
+            Err(_e) => {
+                error!(
+                    "Encoding/Decoding error. Could not save create image from url {}",
+                    url
+                );
+                return Ok(ImageStatus::Skipped);
+            }
+        };
+    }
+}
+
 /// Download and save images from Reddit in parallel
 pub async fn get_images_parallel(
     saved: &UserSaved,
@@ -117,43 +160,60 @@ pub async fn get_images_parallel(
             let url_unwrapped = item.data.url.as_ref().unwrap();
             // currently the supported image hosting sites (reddit, imgur) use an image extension
             // at the end of the URLs. If the URLs end with jpg/png it is assumed to be an image
-            url_unwrapped.ends_with("jpg") || url_unwrapped.ends_with("png")
+            url_unwrapped.ends_with(URL_EXTENSION_JPG)
+                || url_unwrapped.ends_with(URL_EXTENSION_PNG)
+                || url_unwrapped.contains(URL_PREFIX_REDDIT_GALLERY)
         })
         .map(|item| {
             let summary_arc = summary.clone();
-            // every entry in this closure is a valid image
-            summary_arc.lock().unwrap().images_supported += 1;
             // since the latency for downloading an image from the network is unpredictable
             // we spawn a new async task for the each of the images to be downloaded
             async move {
-                let url = item.data.url.unwrap();
-                let extension = String::from(url.split('.').last().unwrap_or("unknown"));
-                let subreddit = item.data.subreddit;
+                let url = item.data.url.borrow().as_ref().unwrap();
+                let subreddit = item.data.subreddit.borrow();
+                let gallery_info = item.data.gallery_data.borrow();
 
-                let file_name = generate_file_name(&url, &data_directory, &subreddit, &extension);
-                if check_path_present(&file_name) {
-                    warn!("Image from url {} already downloaded. Skipping...", url);
-                    summary_arc.lock().unwrap().images_skipped += 1;
-                } else {
-                    let image_bytes = reqwest::get(&url).await?.bytes().await?;
-                    match image::load_from_memory(&image_bytes) {
-                        Ok(image) => {
-                            let save_status = save_image(&image, &file_name, &url)?;
-                            if save_status {
-                                summary_arc.lock().unwrap().images_downloaded += 1;
-                            } else {
-                                summary_arc.lock().unwrap().images_skipped += 1;
-                            }
-                        }
-                        Err(_e) => {
-                            error!(
-                                "Encoding/Decoding error. Could not save create image from url {}",
-                                url
+                // the set of images in this post is collected into this vector
+                let mut image_urls: Vec<String> = Vec::new();
+
+                // if the prefix is present in the URL we know that it's a reddit image gallery
+                if url.contains(URL_PREFIX_REDDIT_GALLERY) {
+                    if let Some(gallery) = gallery_info {
+                        for item in &gallery.items {
+                            // assemble the image URL from the media ID for the gallery item
+                            let _image_url = format!(
+                                "{}/{}.{}",
+                                URL_PREFIX_REDDIT_GALLERY_ITEM, item.media_id, URL_EXTENSION_JPG
                             );
-                            summary_arc.lock().unwrap().images_skipped += 1;
-                            // return Err(ReddSaverError::CouldNotCreateImageError(url, file_name))
+                            debug!("Image URL from Gallery: {:#?}", _image_url);
+                            // push individual image URLs into the vector
+                            image_urls.push(_image_url);
                         }
-                    };
+                    } else {
+                        // empty galleries may be present when a user deletes the images present
+                        // in the gallery or the mods remove it
+                        warn!("Gallery at {} seems to be empty. Ignoring", url)
+                    }
+                } else {
+                    // these URLs are for posts that directly contain a single image
+                    image_urls.push(String::from(url))
+                }
+
+                // every entry in this vector is a valid image
+                summary_arc.lock().unwrap().images_supported += image_urls.len() as i32;
+
+                for image_url in &image_urls {
+                    let extension = String::from(image_url.split(".").last().unwrap_or("unknown"));
+                    let file_name =
+                        generate_file_name(&image_url, &data_directory, &subreddit, &extension);
+                    let image_status = process_single_image(image_url, &file_name);
+                    // update the summary statistics based on the status
+                    match image_status.await? {
+                        ImageStatus::Downloaded => {
+                            summary_arc.lock().unwrap().images_downloaded += 1
+                        }
+                        ImageStatus::Skipped => summary_arc.lock().unwrap().images_skipped += 1,
+                    }
                 }
 
                 Ok::<(), ReddSaverError>(())

@@ -107,12 +107,31 @@ pub struct PostData {
     pub title: Option<String>,
     /// A timestamp of the time when the post was created, in **UTC**.
     pub created_utc: Value,
+    /// Gallery metadata
+    pub gallery_data: Option<GalleryItems>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct GalleryItems {
+    /// Representation containing a list of gallery items
+    pub items: Vec<GalleryItem>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct GalleryItem {
+    /// The reddit media id, can be used to construct a redd.it URL
+    pub media_id: String,
+    /// Unique numerical ID for the specific media item
+    pub id: i64,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Summary {
+    /// Number of images downloaded
     pub images_downloaded: i32,
+    /// Number of images skipping downloading
     pub images_skipped: i32,
+    /// Number of images supported images present and parsable
     pub images_supported: i32,
 }
 
