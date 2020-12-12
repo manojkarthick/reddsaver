@@ -10,7 +10,7 @@ use crate::structures::Summary;
 use crate::user::User;
 use crate::utils::{check_path_present, get_images_parallel, get_user_agent_string};
 use auth::Client;
-use dotenv::dotenv;
+use clap::{App, Arg};
 use env_logger::Env;
 use log::{debug, info};
 use std::env;
@@ -18,8 +18,35 @@ use std::ops::Add;
 
 #[tokio::main]
 async fn main() -> Result<(), ReddSaverError> {
+    let matches = App::new("ReddSaver")
+        .version("0.1.0")
+        .author("Manoj Karthick Selva Kumar")
+        .about("Simple CLI tool to download saved images from Reddit")
+        .arg(
+            Arg::with_name("environment")
+                .short("e")
+                .long("from-env")
+                .value_name("ENV_FILE")
+                .help("Set a custom .env style file with secrets")
+                .default_value(".env")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("data_directory")
+                .short("d")
+                .long("data-dir")
+                .value_name("DATA_DIR")
+                .help("Directory to save the images to")
+                .default_value("data")
+                .takes_value(true),
+        )
+        .get_matches();
+
+    let env_file = matches.value_of("environment").unwrap();
+    let data_directory = String::from(matches.value_of("data_directory").unwrap());
+
     // initialize environment from the .env file
-    dotenv().ok();
+    dotenv::from_filename(env_file).ok();
 
     // initialize logger for the app and set logging level to info if no environment variable present
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
@@ -29,7 +56,6 @@ async fn main() -> Result<(), ReddSaverError> {
     let username = env::var("USERNAME")?;
     let password = env::var("PASSWORD")?;
     let user_agent = get_user_agent_string(None, None);
-    let data_directory = env::var("DATA_DIR")?;
 
     if !check_path_present(&data_directory) {
         return Err(DataDirNotFound);

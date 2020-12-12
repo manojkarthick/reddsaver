@@ -42,7 +42,7 @@ impl<'a> User<'a> {
         let mut complete = false;
         let mut processed = 0;
         let mut after: Option<String> = None;
-        let mut saved: Vec<UserSaved> = vec![];
+        let mut saved: Vec<UserSaved> = Vec::new();
         while !complete {
             // during the first call to the API, we would not provide the after query parameter
             // in subsequent calls, we use the value for after from the response of the
