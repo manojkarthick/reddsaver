@@ -7,11 +7,11 @@ use image::DynamicImage;
 use rand;
 
 use log::{debug, error, info, warn};
+use rand::Rng;
 use random_names::RandomName;
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use rand::Rng;
 
 /// Generate user agent string of the form <name>:<version>.
 ///If no arguments passed generate random name and number
@@ -136,18 +136,24 @@ pub async fn get_images_parallel(
                     summary_arc.lock().unwrap().images_skipped += 1;
                 } else {
                     let image_bytes = reqwest::get(&url).await?.bytes().await?;
-                    let image = match image::load_from_memory(&image_bytes) {
-                        Ok(image) => image,
+                    match image::load_from_memory(&image_bytes) {
+                        Ok(image) => {
+                            let save_status = save_image(&image, &file_name, &url)?;
+                            if save_status {
+                                summary_arc.lock().unwrap().images_downloaded += 1;
+                            } else {
+                                summary_arc.lock().unwrap().images_skipped += 1;
+                            }
+                        }
                         Err(_e) => {
-                            return Err(ReddSaverError::CouldNotCreateImageError(url, file_name))
+                            error!(
+                                "Encoding/Decoding error. Could not save create image from url {}",
+                                url
+                            );
+                            summary_arc.lock().unwrap().images_skipped += 1;
+                            // return Err(ReddSaverError::CouldNotCreateImageError(url, file_name))
                         }
                     };
-                    let save_status = save_image(&image, &file_name, &url)?;
-                    if save_status {
-                        summary_arc.lock().unwrap().images_downloaded += 1;
-                    } else {
-                        summary_arc.lock().unwrap().images_skipped += 1;
-                    }
                 }
 
                 Ok::<(), ReddSaverError>(())
