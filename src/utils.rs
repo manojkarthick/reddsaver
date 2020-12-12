@@ -4,7 +4,6 @@ use crate::structures::{Summary, UserSaved};
 use futures::stream::{FuturesUnordered, TryStreamExt};
 
 use image::DynamicImage;
-use rand;
 
 use log::{debug, error, info, warn};
 use rand::Rng;
@@ -103,7 +102,7 @@ fn generate_file_name(url: &str, data_directory: &str, subreddit: &str, extensio
 enum ImageStatus {
     /// If we are able to successfully download the image
     Downloaded,
-    /// If we skipping downloading the image due to it already being present
+    /// If we are skipping downloading the image due to it already being present
     /// or because we could not find the image or because we are unable to decode
     /// the image
     Skipped,
@@ -113,17 +112,16 @@ enum ImageStatus {
 async fn process_single_image(url: &str, file_name: &str) -> Result<ImageStatus, ReddSaverError> {
     if check_path_present(&file_name) {
         warn!("Image from url {} already downloaded. Skipping...", url);
-        return Ok(ImageStatus::Skipped);
-    // summary_arc.lock().unwrap().images_skipped += 1;
+        Ok(ImageStatus::Skipped)
     } else {
         let image_bytes = reqwest::get(url).await?.bytes().await?;
         match image::load_from_memory(&image_bytes) {
             Ok(image) => {
                 let save_status = save_image(&image, &file_name, &url)?;
                 if save_status {
-                    return Ok(ImageStatus::Downloaded);
+                    Ok(ImageStatus::Downloaded)
                 } else {
-                    return Ok(ImageStatus::Skipped);
+                    Ok(ImageStatus::Skipped)
                 }
             }
             Err(_e) => {
@@ -131,9 +129,9 @@ async fn process_single_image(url: &str, file_name: &str) -> Result<ImageStatus,
                     "Encoding/Decoding error. Could not save create image from url {}",
                     url
                 );
-                return Ok(ImageStatus::Skipped);
+                Ok(ImageStatus::Skipped)
             }
-        };
+        }
     }
 }
 
@@ -203,7 +201,7 @@ pub async fn get_images_parallel(
                 summary_arc.lock().unwrap().images_supported += image_urls.len() as i32;
 
                 for image_url in &image_urls {
-                    let extension = String::from(image_url.split(".").last().unwrap_or("unknown"));
+                    let extension = String::from(image_url.split('.').last().unwrap_or("unknown"));
                     let file_name =
                         generate_file_name(&image_url, &data_directory, &subreddit, &extension);
                     let image_status = process_single_image(image_url, &file_name);
