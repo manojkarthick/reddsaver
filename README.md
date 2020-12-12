@@ -4,9 +4,9 @@ Download images present in your saved posts on Reddit. Experimental.
 Validated to be working on macOS 10.15 using rust 1.47.0. 
 
 Limitations: 
-* Supports png/jpg images only 
+* Supports png/jpg images only
+* Supports downloading images from reddit image galleries 
 * Does not support downloading images from Imgur web posts (direct imgur image links will work)
-* Does not support downloading images from reddit image galleries
 
 ## Instructions
 
