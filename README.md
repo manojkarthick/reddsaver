@@ -1,7 +1,7 @@
-# Reddsaver
+# Reddsaver ![build](https://github.com/manojkarthick/reddsaver/workflows/build/badge.svg)
 
-Download images present in your saved posts on Reddit. Experimental. 
-Validated to be working on macOS 10.15 using rust 1.47.0. 
+* Download images present in your saved posts on Reddit 
+* Experimental. You can download release binaries [here](https://github.com/manojkarthick/reddsaver/releases) 
 
 Limitations: 
 * Supports png/jpg images only
