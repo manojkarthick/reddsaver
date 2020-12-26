@@ -1,0 +1,3 @@
+[target.arm-unknown-linux-gnueabi]
+image = "rust-rpi-zerow:v1-openssl"
+

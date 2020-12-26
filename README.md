@@ -30,6 +30,15 @@ When running the application beyond the first time, if you reuse the directory u
 1. Build the application: `cargo build --release`
 2. Run the application: `./target/release/reddsaver`
 
+### Building for Raspberry Pi Zero W
+
+To cross-compile for raspberry pi, this project uses [rust-cross](https://github.com/rust-embedded/cross). Make sure you have docker installed on your development machine.
+
+1. Build the docker image for rust-cross: `docker build -t rust-rpi-zerow:v1-openssl -f Dockerfile.raspberrypizerow .`
+2. Make sure that the image name used here matches the image name in your `Cross.toml` configuration
+3. Run `cross build --target arm-unknown-linux-gnueabi --release` to build the project
+4. You can find the compiled binary under `target/arm-unknown-linux-gnueabi/release/`
+
 ### Description and command line arguments
 
 Optionally override the values for the directory to save and the env file to read from
