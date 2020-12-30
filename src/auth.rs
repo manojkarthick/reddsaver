@@ -1,10 +1,11 @@
 use crate::errors::ReddSaverError;
 
+use log::debug;
 use reqwest::header::{AUTHORIZATION, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// To generate the Reddit Client ID and secret, visit: https://www.reddit.com/prefs/apps
+/// To generate the Reddit Client ID and secret, go to reddit [preferences](https://www.reddit.com/prefs/apps)
 pub struct Client<'a> {
     /// Client ID for the application
     client_id: &'a str,
@@ -71,6 +72,7 @@ impl<'a> Client<'a> {
             .json::<Auth>()
             .await?;
 
+        debug!("Access token is: {}", auth.access_token);
         Ok(auth)
     }
 }
