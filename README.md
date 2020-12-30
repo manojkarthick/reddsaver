@@ -30,6 +30,11 @@ When running the application beyond the first time, if you reuse the directory u
 1. Build the application: `cargo build --release`
 2. Run the application: `./target/release/reddsaver`
 
+### Running with Docker
+
+1. Pre-built docker images are available at https://hub.docker.com/u/manojkarthick
+2. Currently using manual builds. Docker autobuild is still WIP
+
 ### Building for Raspberry Pi Zero W
 
 To cross-compile for raspberry pi, this project uses [rust-cross](https://github.com/rust-embedded/cross). Make sure you have docker installed on your development machine.
@@ -71,3 +76,14 @@ docker run --rm \
 ```
 
  
+
+### TODO
+- [x] Separate dockerfiles
+- [ ] Update logging to use `pretty_env_logger`
+- [ ] Switch to `structopt` instead of `clap-rs`
+- [ ] Option to toggle verbose mode for `clap`
+- [ ] Stop on first skip
+- [ ] Sample video
+- [ ] Update email
+- [ ] Publish to Crates.io
+- [ ] Experimental GIF support
