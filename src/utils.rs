@@ -3,18 +3,18 @@ use crate::structures::{Summary, UserSaved};
 
 use futures::stream::{FuturesUnordered, TryStreamExt};
 
-use image::DynamicImage;
-
 use log::{debug, error, info, warn};
 use rand::Rng;
 use random_names::RandomName;
 use std::borrow::Borrow;
-use std::fs;
+use std::fs::File;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::{fs, io};
 
 static URL_EXTENSION_JPG: &str = "jpg";
 static URL_EXTENSION_PNG: &str = "png";
+static URL_EXTENSION_GIF: &str = "gif";
 static URL_PREFIX_REDDIT_GALLERY: &str = "reddit.com/gallery";
 static URL_PREFIX_REDDIT_GALLERY_ITEM: &str = "https://i.redd.it";
 
@@ -59,8 +59,29 @@ pub fn get_user_agent_string(name: Option<String>, version: Option<String>) -> S
 //     Ok(())
 // }
 
-/// Takes a binary image blob and save it to the filesystem
-fn save_image(image: &DynamicImage, file_name: &str, url: &str) -> Result<bool, ReddSaverError> {
+// #[allow(dead_code)]
+// /// Takes a binary image blob and save it to the filesystem
+// fn save_image(image: &DynamicImage, file_name: &str, url: &str) -> Result<bool, ReddSaverError> {
+//     // create directory if it does not already exist
+//     // the directory is created relative to the current working directory
+//     let directory = Path::new(file_name).parent().unwrap();
+//     match fs::create_dir_all(directory) {
+//         Ok(_) => (),
+//         Err(_e) => return Err(ReddSaverError::CouldNotCreateDirectory),
+//     }
+
+//     match image.save(&file_name) {
+//         Ok(_) => info!("Successfully saved image: {} from url {}", file_name, url),
+//         Err(_e) => {
+//             error!("Could not save image from url {} to {}", url, file_name);
+//             return Ok(false);
+//         }
+//     }
+
+//     Ok(true)
+// }
+
+async fn download_image(file_name: &str, url: &str) -> Result<bool, ReddSaverError> {
     // create directory if it does not already exist
     // the directory is created relative to the current working directory
     let directory = Path::new(file_name).parent().unwrap();
@@ -69,7 +90,9 @@ fn save_image(image: &DynamicImage, file_name: &str, url: &str) -> Result<bool, 
         Err(_e) => return Err(ReddSaverError::CouldNotCreateDirectory),
     }
 
-    match image.save(&file_name) {
+    let data = reqwest::get(url).await?.bytes().await?;
+    let mut output = File::create(&file_name)?;
+    match io::copy(&mut data.as_ref(), &mut output) {
         Ok(_) => info!("Successfully saved image: {} from url {}", file_name, url),
         Err(_e) => {
             error!("Could not save image from url {} to {}", url, file_name);
@@ -114,23 +137,12 @@ async fn process_single_image(url: &str, file_name: &str) -> Result<ImageStatus,
         warn!("Image from url {} already downloaded. Skipping...", url);
         Ok(ImageStatus::Skipped)
     } else {
-        let image_bytes = reqwest::get(url).await?.bytes().await?;
-        match image::load_from_memory(&image_bytes) {
-            Ok(image) => {
-                let save_status = save_image(&image, &file_name, &url)?;
-                if save_status {
-                    Ok(ImageStatus::Downloaded)
-                } else {
-                    Ok(ImageStatus::Skipped)
-                }
-            }
-            Err(_e) => {
-                error!(
-                    "Encoding/Decoding error. Could not save create image from url {}",
-                    url
-                );
-                Ok(ImageStatus::Skipped)
-            }
+        let save_status = download_image(&file_name, &url).await?;
+        // let save_status = save_image(&image, &file_name, &url)?;
+        if save_status {
+            Ok(ImageStatus::Downloaded)
+        } else {
+            Ok(ImageStatus::Skipped)
         }
     }
 }
@@ -160,6 +172,7 @@ pub async fn get_images_parallel(
             // at the end of the URLs. If the URLs end with jpg/png it is assumed to be an image
             url_unwrapped.ends_with(URL_EXTENSION_JPG)
                 || url_unwrapped.ends_with(URL_EXTENSION_PNG)
+                || url_unwrapped.ends_with(URL_EXTENSION_GIF)
                 || url_unwrapped.contains(URL_PREFIX_REDDIT_GALLERY)
         })
         .map(|item| {
@@ -179,13 +192,13 @@ pub async fn get_images_parallel(
                     if let Some(gallery) = gallery_info {
                         for item in &gallery.items {
                             // assemble the image URL from the media ID for the gallery item
-                            let _image_url = format!(
+                            let img_url = format!(
                                 "{}/{}.{}",
                                 URL_PREFIX_REDDIT_GALLERY_ITEM, item.media_id, URL_EXTENSION_JPG
                             );
-                            debug!("Image URL from Gallery: {:#?}", _image_url);
+                            debug!("Image URL from Gallery: {:#?}", img_url);
                             // push individual image URLs into the vector
-                            image_urls.push(_image_url);
+                            image_urls.push(img_url);
                         }
                     } else {
                         // empty galleries may be present when a user deletes the images present
@@ -234,6 +247,5 @@ pub async fn get_images_parallel(
     );
     debug!("Number of images skipped: {}", local_summary.images_skipped);
 
-    let x = Ok(local_summary);
-    x
+    Ok(local_summary)
 }

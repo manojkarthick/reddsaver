@@ -21,4 +21,6 @@ pub enum ReddSaverError {
     TryFromIntError(#[from] std::num::TryFromIntError),
     #[error("Data directory not found, please check if it exists")]
     DataDirNotFound,
+    #[error("Could not create or save image")]
+    IoError(#[from] std::io::Error),
 }
