@@ -1,10 +1,10 @@
 [package]
 name = "reddsaver"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Manoj Karthick Selva Kumar <manojkarthick@ymail.com>"]
 description = "CLI tool to download saved images from Reddit"
 edition = "2018"
-license = "MIT or Apache-2.0"
+license = "MIT/Apache-2.0"
 readme = "README.md"
 homepage = "https://github.com/manojkarthick/reddsaver"
 repository = "https://github.com/manojkarthick/reddsaver"

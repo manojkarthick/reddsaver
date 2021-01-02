@@ -1,4 +1,4 @@
-# Reddsaver ![build](https://github.com/manojkarthick/reddsaver/workflows/build/badge.svg)
+# Reddsaver ![build](https://github.com/manojkarthick/reddsaver/workflows/build/badge.svg) [![Crates.io](https://img.shields.io/crates/v/reddsaver.svg)](https://crates.io/crates/reddsaver)
 
 * Command line tool to download saved images from Reddit 
 * Supports png/jpg images only
@@ -25,15 +25,14 @@ git clone https://github.com/manojkarthick/reddsaver.git
 
 #### Docker support
 
-Pre-built docker images are available at https://hub.docker.com/u/manojkarthick
+Pre-built docker images are available on [Docker Hub](https://hub.docker.com/u/manojkarthick) 
  
 ```
 mkdir -pv data/
-docker build -t reddsaver:v0.1.0 .
 docker run --rm \
     --volume="$PWD/data:/app/data" \
-    --volume="$PWD/.env:/app/.env" \
-    reddsaver:v0.1.0
+    --volume="$PWD/reddsaver.env:/app/reddsaver.env" \
+    reddsaver:latest -d /app/data -e /app/reddsaver.env
 ```
 
 ## Running
