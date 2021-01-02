@@ -10,7 +10,7 @@ use crate::structures::Summary;
 use crate::user::User;
 use crate::utils::{check_path_present, get_images_parallel, get_user_agent_string};
 use auth::Client;
-use clap::{App, Arg};
+use clap::{crate_version, App, Arg};
 use env_logger::Env;
 use log::{debug, info};
 use std::env;
@@ -19,7 +19,7 @@ use std::ops::Add;
 #[tokio::main]
 async fn main() -> Result<(), ReddSaverError> {
     let matches = App::new("ReddSaver")
-        .version("0.2.0")
+        .version(crate_version!())
         .author("Manoj Karthick Selva Kumar")
         .about("Simple CLI tool to download saved images from Reddit")
         .arg(
