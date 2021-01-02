@@ -19,7 +19,7 @@ use std::ops::Add;
 #[tokio::main]
 async fn main() -> Result<(), ReddSaverError> {
     let matches = App::new("ReddSaver")
-        .version("0.1.0")
+        .version("0.2.0")
         .author("Manoj Karthick Selva Kumar")
         .about("Simple CLI tool to download saved images from Reddit")
         .arg(
