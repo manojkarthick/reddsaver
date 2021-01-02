@@ -14,7 +14,6 @@ use std::{fs, io};
 
 static URL_EXTENSION_JPG: &str = "jpg";
 static URL_EXTENSION_PNG: &str = "png";
-static URL_EXTENSION_GIF: &str = "gif";
 static URL_PREFIX_REDDIT_GALLERY: &str = "reddit.com/gallery";
 static URL_PREFIX_REDDIT_GALLERY_ITEM: &str = "https://i.redd.it";
 
@@ -35,52 +34,7 @@ pub fn get_user_agent_string(name: Option<String>, version: Option<String>) -> S
     }
 }
 
-// this method had the same outcome as the `get_images_parallel` method initially
-// this was a naive implementation and is left here for reference
-// pub async fn get_images(saved: &UserSaved) -> Result<(), ReddSaverError> {
-//     for child in saved.data.children.iter() {
-//         let child_cloned = child.clone();
-//         if let Some(url) = child_cloned.data.url {
-//             let extension = String::from(url.split('.').last().unwrap_or("unknown"));
-//             let subreddit = child_cloned.data.subreddit;
-//             if extension == "jpg" || extension == "png" {
-//                 info!("Downloading image from URL: {}", url);
-//                 let image_bytes = reqwest::get(&url).await?.bytes().await?;
-//                 let image = match image::load_from_memory(&image_bytes) {
-//                     Ok(image) => image,
-//                     Err(_e) => return Err(ReddSaverError::CouldNotCreateImageError),
-//                 };
-//                 let file_name = save_image(&image, &url, &subreddit, &extension)?;
-//                 info!("Successfully saved image: {}", file_name);
-//             }
-//         }
-//     }
-//
-//     Ok(())
-// }
-
-// #[allow(dead_code)]
-// /// Takes a binary image blob and save it to the filesystem
-// fn save_image(image: &DynamicImage, file_name: &str, url: &str) -> Result<bool, ReddSaverError> {
-//     // create directory if it does not already exist
-//     // the directory is created relative to the current working directory
-//     let directory = Path::new(file_name).parent().unwrap();
-//     match fs::create_dir_all(directory) {
-//         Ok(_) => (),
-//         Err(_e) => return Err(ReddSaverError::CouldNotCreateDirectory),
-//     }
-
-//     match image.save(&file_name) {
-//         Ok(_) => info!("Successfully saved image: {} from url {}", file_name, url),
-//         Err(_e) => {
-//             error!("Could not save image from url {} to {}", url, file_name);
-//             return Ok(false);
-//         }
-//     }
-
-//     Ok(true)
-// }
-
+/// Download image from the given url and save to data directory. Also create data directory if not present already
 async fn download_image(file_name: &str, url: &str) -> Result<bool, ReddSaverError> {
     // create directory if it does not already exist
     // the directory is created relative to the current working directory
@@ -134,11 +88,10 @@ enum ImageStatus {
 /// Helper function that downloads and saves a single image from Reddit or Imgur
 async fn process_single_image(url: &str, file_name: &str) -> Result<ImageStatus, ReddSaverError> {
     if check_path_present(&file_name) {
-        warn!("Image from url {} already downloaded. Skipping...", url);
+        debug!("Image from url {} already downloaded. Skipping...", url);
         Ok(ImageStatus::Skipped)
     } else {
         let save_status = download_image(&file_name, &url).await?;
-        // let save_status = save_image(&image, &file_name, &url)?;
         if save_status {
             Ok(ImageStatus::Downloaded)
         } else {
@@ -172,7 +125,6 @@ pub async fn get_images_parallel(
             // at the end of the URLs. If the URLs end with jpg/png it is assumed to be an image
             url_unwrapped.ends_with(URL_EXTENSION_JPG)
                 || url_unwrapped.ends_with(URL_EXTENSION_PNG)
-                || url_unwrapped.ends_with(URL_EXTENSION_GIF)
                 || url_unwrapped.contains(URL_PREFIX_REDDIT_GALLERY)
         })
         .map(|item| {

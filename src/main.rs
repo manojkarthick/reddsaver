@@ -44,12 +44,12 @@ async fn main() -> Result<(), ReddSaverError> {
 
     let env_file = matches.value_of("environment").unwrap();
     let data_directory = String::from(matches.value_of("data_directory").unwrap());
-
     // initialize environment from the .env file
     dotenv::from_filename(env_file).ok();
 
     // initialize logger for the app and set logging level to info if no environment variable present
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    let env = Env::default().filter("RS_LOG").default_filter_or("info");
+    env_logger::Builder::from_env(env).init();
 
     let client_id = env::var("CLIENT_ID")?;
     let client_secret = env::var("CLIENT_SECRET")?;
