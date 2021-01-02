@@ -1,8 +1,8 @@
 # Reddsaver ![build](https://github.com/manojkarthick/reddsaver/workflows/build/badge.svg)
 
-* Download images present in your saved posts on Reddit   
+* Command line tool to download saved images from Reddit 
 * Supports png/jpg images only
-* Supports downloading images from reddit image galleries 
+* Also supports downloading images from Reddit image galleries 
 
 ## Installation
 
@@ -10,15 +10,22 @@
 
 You can download release binaries [here](https://github.com/manojkarthick/reddsaver/releases)
 
-### Building and running from source
+### Alternative methods
+
+#### Building and running from source
+
+Make sure you have rustc `v1.48.0` and cargo installed on your machine.
+```
+git clone https://github.com/manojkarthick/reddsaver.git
+
+```
 
 1. Build the application: `cargo build --release`
 2. Run the application: `./target/release/reddsaver`
 
-### Docker support
+#### Docker support
 
-1. Pre-built docker images are available at https://hub.docker.com/u/manojkarthick
-2. Currently using manual builds. Docker autobuild is still WIP
+Pre-built docker images are available at https://hub.docker.com/u/manojkarthick
  
 ```
 mkdir -pv data/
@@ -49,6 +56,7 @@ PASSWORD=<password>
 4. Run the app! 
 ```
 mkdir -pv reddsaver/
+reddsaver --help
 reddsaver --e reddsaver.env -f reddsaver/
 ```
 
@@ -78,6 +86,7 @@ OPTIONS:
 ## TODO
 - [x] Separate dockerfiles
 - [ ] Publish to Crates.io
+- [ ] Publish docker images
 
 ## Other Information
 

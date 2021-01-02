@@ -1,8 +1,15 @@
 [package]
 name = "reddsaver"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Manoj Karthick Selva Kumar <manojkarthick@ymail.com>"]
+description = "CLI tool to download saved images from Reddit"
 edition = "2018"
+license = "MIT or Apache-2.0"
+readme = "README.md"
+homepage = "https://github.com/manojkarthick/reddsaver"
+repository = "https://github.com/manojkarthick/reddsaver"
+keywords = ["cli", "reddit", "images"]
+categories = ["command-line-utilities"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
