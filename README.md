@@ -12,16 +12,21 @@ You can download release binaries [here](https://github.com/manojkarthick/reddsa
 
 ### Alternative methods
 
+#### Using cargo
+
+If you already have Rust installed, you can also install using `cargo`: 
+```
+cargo install reddsaver
+```
+
 #### Building and running from source
 
 Make sure you have rustc `v1.48.0` and cargo installed on your machine.
 ```
 git clone https://github.com/manojkarthick/reddsaver.git
-
+cargo build --release
+./target/release/reddsaver
 ```
-
-1. Build the application: `cargo build --release`
-2. Run the application: `./target/release/reddsaver`
 
 #### Docker support
 
@@ -84,8 +89,8 @@ OPTIONS:
 
 ## TODO
 - [x] Separate dockerfiles
-- [ ] Publish to Crates.io
-- [ ] Publish docker images
+- [x] Publish to Crates.io
+- [x] Publish docker images
 
 ## Other Information
 
