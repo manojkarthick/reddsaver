@@ -41,6 +41,7 @@ docker run --rm \
 ```
 
 ## Running
+
 1. Create a new script application at https://www.reddit.com/prefs/apps
     * Click on create an app at the bottom of the page
     * Input a name for your application, for example: <username>-reddsaver
@@ -65,6 +66,8 @@ reddsaver --e reddsaver.env -f reddsaver/
 ```
 
 NOTE: When running the application beyond the first time, if you use the directory as the initial run, the application will skip downloading the images that have already been downloaded.
+
+View it in action here: [![asciicast](https://asciinema.org/a/382339.svg)](https://asciinema.org/a/382339)
 
 ## Description and command line arguments
 
