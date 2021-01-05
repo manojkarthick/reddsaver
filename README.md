@@ -58,6 +58,8 @@ CLIENT_SECRET=<client_secret>
 USERNAME=<username>
 PASSWORD=<password>
 ```
+_NOTE_: If you have 2FA enabled, please make sure you set `PASSWORD=<password>:<2FA_TOTP_token>` instead
+
 4. Run the app! 
 ```
 mkdir -pv reddsaver/
@@ -67,7 +69,9 @@ reddsaver --e reddsaver.env -f reddsaver/
 
 NOTE: When running the application beyond the first time, if you use the directory as the initial run, the application will skip downloading the images that have already been downloaded.
 
-View it in action here: [![asciicast](https://asciinema.org/a/382339.svg)](https://asciinema.org/a/382339)
+View it in action here: 
+
+[![asciicast](https://asciinema.org/a/382339.svg)](https://asciinema.org/a/382339)
 
 ## Description and command line arguments
 
