@@ -64,7 +64,7 @@ _NOTE_: If you have 2FA enabled, please make sure you set `PASSWORD=<password>:<
 ```
 mkdir -pv reddsaver/
 reddsaver --help
-reddsaver --e reddsaver.env -f reddsaver/
+reddsaver -e reddsaver.env -d reddsaver/
 ```
 
 NOTE: When running the application beyond the first time, if you use the directory as the initial run, the application will skip downloading the images that have already been downloaded.
