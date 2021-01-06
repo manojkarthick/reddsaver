@@ -8,7 +8,9 @@ use crate::errors::ReddSaverError;
 use crate::errors::ReddSaverError::DataDirNotFound;
 use crate::structures::Summary;
 use crate::user::User;
-use crate::utils::{check_path_present, get_images_parallel, get_user_agent_string};
+use crate::utils::{
+    check_path_present, get_images_parallel, get_user_agent_string, mask_sensitive,
+};
 use auth::Client;
 use clap::{crate_version, App, Arg};
 use env_logger::Env;
@@ -40,10 +42,36 @@ async fn main() -> Result<(), ReddSaverError> {
                 .default_value("data")
                 .takes_value(true),
         )
+        .arg(
+            Arg::with_name("show_config")
+                .short("s")
+                .long("show-config")
+                .takes_value(false)
+                .help("Show the current config being used"),
+        )
+        .arg(
+            Arg::with_name("dry_run")
+                .short("r")
+                .long("dry-run")
+                .takes_value(false)
+                .help("Dry run and print the URLs of saved images to download"),
+        )
+        .arg(
+            Arg::with_name("human_readable")
+                .short("H")
+                .long("human-readable")
+                .takes_value(false)
+                .help("Use human readable names for files"),
+        )
         .get_matches();
 
     let env_file = matches.value_of("environment").unwrap();
     let data_directory = String::from(matches.value_of("data_directory").unwrap());
+    // generate the URLs to download from without actually downloading the images
+    let to_download = !matches.is_present("dry_run");
+    // generate human readable file names instead of MD5 Hashed file names
+    let use_human_readable = matches.is_present("human_readable");
+
     // initialize environment from the .env file
     dotenv::from_filename(env_file).ok();
 
@@ -59,6 +87,20 @@ async fn main() -> Result<(), ReddSaverError> {
 
     if !check_path_present(&data_directory) {
         return Err(DataDirNotFound);
+    }
+
+    // if the option is show-config, show the configuration and return immediately
+    if matches.is_present("show_config") {
+        info!("Current configuration:");
+        info!("ENVIRONMENT_FILE = {}", &env_file);
+        info!("DATA_DIRECTORY = {}", &data_directory);
+        info!("CLIENT_ID = {}", &client_id);
+        info!("CLIENT_SECRET = {}", mask_sensitive(&client_secret));
+        info!("USERNAME = {}", &username);
+        info!("PASSWORD = {}", mask_sensitive(&password));
+        info!("USER_AGENT = {}", &user_agent);
+
+        return Ok(());
     }
 
     // login to reddit using the credentials provided and get API bearer token
@@ -95,7 +137,15 @@ async fn main() -> Result<(), ReddSaverError> {
         images_skipped: 0,
     };
     for collection in &saved_posts {
-        full_summary = full_summary.add(get_images_parallel(&collection, &data_directory).await?);
+        full_summary = full_summary.add(
+            get_images_parallel(
+                &collection,
+                &data_directory,
+                to_download,
+                use_human_readable,
+            )
+            .await?,
+        );
     }
 
     info!("#####################################");

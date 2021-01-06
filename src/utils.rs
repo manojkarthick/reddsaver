@@ -63,16 +63,43 @@ pub fn check_path_present(file_path: &str) -> bool {
 }
 
 /// Generate a file name in the right format that Reddsaver expects
-fn generate_file_name(url: &str, data_directory: &str, subreddit: &str, extension: &str) -> String {
-    // create a hash for the image using the URL the image is located at
-    // this helps to make sure the image download always writes the same file
-    // name irrespective of how many times it's run. If run more than once, the
-    // image is overwritten by this method
-    let hash = md5::compute(url);
-    format!(
-        "{}/{}/img-{:x}.{}",
-        data_directory, subreddit, hash, extension
-    )
+fn generate_file_name(
+    url: &str,
+    data_directory: &str,
+    subreddit: &str,
+    extension: &str,
+    name: &str,
+    title: &str,
+    use_human_names: bool,
+) -> String {
+    return if !use_human_names {
+        // create a hash for the image using the URL the image is located at
+        // this helps to make sure the image download always writes the same file
+        // name irrespective of how many times it's run. If run more than once, the
+        // image is overwritten by this method
+        let hash = md5::compute(url);
+        format!(
+            "{}/{}/img-{:x}.{}",
+            data_directory, subreddit, hash, extension
+        )
+    } else {
+        let canonical_title: String = title
+            .to_lowercase()
+            .chars()
+            // to make sure file names don't exceed operating system maximums, truncate at 200
+            // you could possibly stretch beyond 200, but this is a conservative estimate that
+            // leaves 55 bytes for the name string
+            .take(200)
+            .enumerate()
+            .map(|(_, c)| if c.is_whitespace() { '_' } else { c })
+            .collect();
+        // create a canonical human readable file name using the post's title
+        // note that the name of the post is something of the form t3_<randomstring>
+        format!(
+            "{}/{}/{}_{}.{}",
+            data_directory, subreddit, canonical_title, name, extension
+        )
+    };
 }
 
 /// Status of image processing
@@ -104,6 +131,8 @@ async fn process_single_image(url: &str, file_name: &str) -> Result<ImageStatus,
 pub async fn get_images_parallel(
     saved: &UserSaved,
     data_directory: &str,
+    to_download: bool,
+    use_human_names: bool,
 ) -> Result<Summary, ReddSaverError> {
     let summary = Arc::new(Mutex::new(Summary {
         images_supported: 0,
@@ -135,6 +164,11 @@ pub async fn get_images_parallel(
                 let url = item.data.url.borrow().as_ref().unwrap();
                 let subreddit = item.data.subreddit.borrow();
                 let gallery_info = item.data.gallery_data.borrow();
+                let post_name = item.data.name.borrow();
+                let post_title = match item.data.title.as_ref() {
+                    Some(t) => t,
+                    None => "",
+                };
 
                 // the set of images in this post is collected into this vector
                 let mut image_urls: Vec<String> = Vec::new();
@@ -167,15 +201,27 @@ pub async fn get_images_parallel(
 
                 for image_url in &image_urls {
                     let extension = String::from(image_url.split('.').last().unwrap_or("unknown"));
-                    let file_name =
-                        generate_file_name(&image_url, &data_directory, &subreddit, &extension);
-                    let image_status = process_single_image(image_url, &file_name);
-                    // update the summary statistics based on the status
-                    match image_status.await? {
-                        ImageStatus::Downloaded => {
-                            summary_arc.lock().unwrap().images_downloaded += 1
+                    let file_name = generate_file_name(
+                        &image_url,
+                        &data_directory,
+                        &subreddit,
+                        &extension,
+                        &post_name,
+                        &post_title,
+                        use_human_names,
+                    );
+                    if to_download {
+                        let image_status = process_single_image(image_url, &file_name);
+                        // update the summary statistics based on the status
+                        match image_status.await? {
+                            ImageStatus::Downloaded => {
+                                summary_arc.lock().unwrap().images_downloaded += 1
+                            }
+                            ImageStatus::Skipped => summary_arc.lock().unwrap().images_skipped += 1,
                         }
-                        ImageStatus::Skipped => summary_arc.lock().unwrap().images_skipped += 1,
+                    } else {
+                        info!("Image available at URL: {}", &image_url);
+                        summary_arc.lock().unwrap().images_skipped += 1;
                     }
                 }
 
@@ -200,4 +246,29 @@ pub async fn get_images_parallel(
     debug!("Number of images skipped: {}", local_summary.images_skipped);
 
     Ok(local_summary)
+}
+
+/// Function that masks sensitive data such as password and client secrets
+pub fn mask_sensitive(word: &str) -> String {
+    let word_length = word.len();
+    return if word.is_empty() {
+        // return with indication if string is empty
+        String::from("<EMPTY>")
+    } else if word_length > 0 && word_length <= 3 {
+        // if string length is between 1-3, mask all characters
+        "*".repeat(word_length)
+    } else {
+        // if string length greater than 5, mask all characters
+        // except the first two and the last characters
+        word.chars()
+            .enumerate()
+            .map(|(i, c)| {
+                if i == 0 || i == 1 || i == word_length - 1 {
+                    c
+                } else {
+                    '*'
+                }
+            })
+            .collect()
+    };
 }
