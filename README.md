@@ -62,9 +62,18 @@ _NOTE_: If you have 2FA enabled, please make sure you set `PASSWORD=<password>:<
 
 4. Run the app! 
 ```
+
+# Create a directory to save your images to
 mkdir -pv reddsaver/
+
+# Check if you installation is working properly
 reddsaver --help
-reddsaver -e reddsaver.env -d reddsaver/
+
+# Check if the right configuration has been picked up
+reddsaver -e reddsaver.env -d reddsaver --show-config  
+
+# Run the app to download the saved images
+reddsaver -e reddsaver.env -d reddsaver
 ```
 
 NOTE: When running the application beyond the first time, if you use the directory as the initial run, the application will skip downloading the images that have already been downloaded.
@@ -75,29 +84,42 @@ View it in action here:
 
 ## Description and command line arguments
 
-Optionally override the values for the directory to save and the env file to read from
+Optionally override the values for the directory to save and the env file to read from:
 
 ```
-ReddSaver 0.1.0
+ReddSaver 0.2.2
 Manoj Karthick Selva Kumar
 Simple CLI tool to download saved images from Reddit
 
 USAGE:
-    reddsaver [OPTIONS]
+    reddsaver [FLAGS] [OPTIONS]
 
 FLAGS:
-    -h, --help       Prints help information
-    -V, --version    Prints version information
+    -r, --dry-run           Dry run and print the URLs of saved images to download
+    -h, --help              Prints help information
+    -H, --human-readable    Use human readable names for files
+    -s, --show-config       Show the current config being used
+    -V, --version           Prints version information
 
 OPTIONS:
     -d, --data-dir <DATA_DIR>    Directory to save the images to [default: data]
     -e, --from-env <ENV_FILE>    Set a custom .env style file with secrets [default: .env]
 ```
 
+Some points to note:
+
+* By default, reddsaver generates filenames for the images using a MD5 Hash of the URLs. You can instead generate human readable names using the `--human-readable` flag.
+* You can check the configuration used by ReddSaver by using the `--show-config` flag.
+
+
 ## TODO
 - [x] Separate dockerfiles
 - [x] Publish to Crates.io
 - [x] Publish docker images
+- [x] Human readable file names
+- [x] Option to show configuration used
+- [x] Option to dry run the download process
+- [ ] GIF support
 
 ## Other Information
 
