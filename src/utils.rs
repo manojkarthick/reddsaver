@@ -1,16 +1,16 @@
-use crate::errors::ReddSaverError;
-use crate::structures::{Summary, UserSaved};
-
-use futures::stream::{FuturesUnordered, TryStreamExt};
-
-use log::{debug, error, info, warn};
-use rand::Rng;
-use random_names::RandomName;
 use std::borrow::Borrow;
 use std::fs::File;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::{fs, io};
+
+use futures::stream::{FuturesUnordered, TryStreamExt};
+use log::{debug, error, info, warn};
+use rand::Rng;
+use random_names::RandomName;
+
+use crate::errors::ReddSaverError;
+use crate::structures::{Summary, UserSaved};
 
 static URL_EXTENSION_JPG: &str = "jpg";
 static URL_EXTENSION_PNG: &str = "png";
@@ -70,6 +70,7 @@ fn generate_file_name(
     extension: &str,
     name: &str,
     title: &str,
+    index: &u32,
     use_human_names: bool,
 ) -> String {
     return if !use_human_names {
@@ -91,13 +92,25 @@ fn generate_file_name(
             // leaves 55 bytes for the name string
             .take(200)
             .enumerate()
-            .map(|(_, c)| if c.is_whitespace() { '_' } else { c })
+            .map(|(_, c)| {
+                if c.is_whitespace() || c == '/' || c == '\\' {
+                    '_'
+                } else {
+                    c
+                }
+            })
             .collect();
         // create a canonical human readable file name using the post's title
         // note that the name of the post is something of the form t3_<randomstring>
+        let canonical_name: String = if *index == 0 {
+            String::from(name)
+        } else {
+            format!("{}_{}", name, index)
+        };
+
         format!(
             "{}/{}/{}_{}.{}",
-            data_directory, subreddit, canonical_title, name, extension
+            data_directory, subreddit, canonical_title, canonical_name, extension
         )
     };
 }
@@ -171,12 +184,12 @@ pub async fn get_images_parallel(
                 };
 
                 // the set of images in this post is collected into this vector
-                let mut image_urls: Vec<String> = Vec::new();
+                let mut image_info: Vec<(u32, String)> = Vec::new();
 
                 // if the prefix is present in the URL we know that it's a reddit image gallery
                 if url.contains(URL_PREFIX_REDDIT_GALLERY) {
                     if let Some(gallery) = gallery_info {
-                        for item in &gallery.items {
+                        for (index, item) in gallery.items.iter().enumerate() {
                             // assemble the image URL from the media ID for the gallery item
                             let img_url = format!(
                                 "{}/{}.{}",
@@ -184,7 +197,7 @@ pub async fn get_images_parallel(
                             );
                             debug!("Image URL from Gallery: {:#?}", img_url);
                             // push individual image URLs into the vector
-                            image_urls.push(img_url);
+                            image_info.push((index as u32, img_url));
                         }
                     } else {
                         // empty galleries may be present when a user deletes the images present
@@ -193,13 +206,13 @@ pub async fn get_images_parallel(
                     }
                 } else {
                     // these URLs are for posts that directly contain a single image
-                    image_urls.push(String::from(url))
+                    image_info.push((0, String::from(url)));
                 }
 
                 // every entry in this vector is a valid image
-                summary_arc.lock().unwrap().images_supported += image_urls.len() as i32;
+                summary_arc.lock().unwrap().images_supported += image_info.len() as i32;
 
-                for image_url in &image_urls {
+                for (index, image_url) in &image_info {
                     let extension = String::from(image_url.split('.').last().unwrap_or("unknown"));
                     let file_name = generate_file_name(
                         &image_url,
@@ -208,6 +221,7 @@ pub async fn get_images_parallel(
                         &extension,
                         &post_name,
                         &post_title,
+                        &index,
                         use_human_names,
                     );
                     if to_download {
