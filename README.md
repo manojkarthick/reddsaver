@@ -15,14 +15,28 @@ You can download release binaries [here](https://github.com/manojkarthick/reddsa
 #### Using cargo
 
 If you already have Rust installed, you can also install using `cargo`: 
-```
+```shell script
 cargo install reddsaver
+```
+
+#### Using nix
+
+If you are a [nix](https://github.com/NixOS/nix) user, you can install reddsaver from [nixpkgs](https://github.com/NixOS/nixpkgs/blob/master/pkgs/applications/misc/reddsaver/default.nix)
+```shell script
+nix-env --install reddsaver
+```
+
+or, if you manage your installation using [home-manager](https://github.com/nix-community/home-manager), add to your `home.packages`:
+```shell script
+home.packages = [
+    pkgs.reddsaver
+]; 
 ```
 
 #### Building and running from source
 
 Make sure you have rustc `v1.48.0` and cargo installed on your machine.
-```
+```shell script
 git clone https://github.com/manojkarthick/reddsaver.git
 cargo build --release
 ./target/release/reddsaver
@@ -32,7 +46,7 @@ cargo build --release
 
 Pre-built docker images are available on [Docker Hub](https://hub.docker.com/u/manojkarthick) 
  
-```
+```shell script
 mkdir -pv data/
 docker run --rm \
     --volume="$PWD/data:/app/data" \
@@ -52,7 +66,7 @@ docker run --rm \
     * The random string next to the field "secret" is your client secret 
 2. Copy the client ID and client secret information returned
 3. Create a .env file with the following keys, for example `reddsaver.env`:  
-```
+```shell script
 CLIENT_ID=<client_id>
 CLIENT_SECRET=<client_secret>
 USERNAME=<username>
@@ -61,7 +75,7 @@ PASSWORD=<password>
 _NOTE_: If you have 2FA enabled, please make sure you set `PASSWORD=<password>:<2FA_TOTP_token>` instead
 
 4. Run the app! 
-```
+```shell script
 
 # Create a directory to save your images to
 mkdir -pv reddsaver/
@@ -86,7 +100,7 @@ View it in action here:
 
 Optionally override the values for the directory to save and the env file to read from:
 
-```
+```shell script
 ReddSaver 0.2.2
 Manoj Karthick Selva Kumar
 Simple CLI tool to download saved images from Reddit
