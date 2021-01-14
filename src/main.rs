@@ -1,22 +1,23 @@
+use std::env;
+
+use clap::{crate_version, App, Arg};
+use env_logger::Env;
+use log::{debug, info};
+
+use auth::Client;
+
+use crate::download::Downloader;
+use crate::errors::ReddSaverError;
+use crate::errors::ReddSaverError::DataDirNotFound;
+use crate::user::User;
+use crate::utils::*;
+
 mod auth;
+mod download;
 mod errors;
 mod structures;
 mod user;
 mod utils;
-
-use crate::errors::ReddSaverError;
-use crate::errors::ReddSaverError::DataDirNotFound;
-use crate::structures::Summary;
-use crate::user::User;
-use crate::utils::{
-    check_path_present, get_images_parallel, get_user_agent_string, mask_sensitive,
-};
-use auth::Client;
-use clap::{crate_version, App, Arg};
-use env_logger::Env;
-use log::{debug, info};
-use std::env;
-use std::ops::Add;
 
 #[tokio::main]
 async fn main() -> Result<(), ReddSaverError> {
@@ -63,14 +64,38 @@ async fn main() -> Result<(), ReddSaverError> {
                 .takes_value(false)
                 .help("Use human readable names for files"),
         )
+        .arg(
+            Arg::with_name("subreddits")
+                .short("S")
+                .long("subreddits")
+                .multiple(true)
+                .value_name("SUBREDDITS")
+                .value_delimiter(",")
+                .help("Download images from these subreddits only")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("unsave")
+                .short("U")
+                .long("--unsave")
+                .takes_value(false)
+                .help("Unsave post after processing"),
+        )
         .get_matches();
 
     let env_file = matches.value_of("environment").unwrap();
     let data_directory = String::from(matches.value_of("data_directory").unwrap());
     // generate the URLs to download from without actually downloading the images
-    let to_download = !matches.is_present("dry_run");
+    let should_download = !matches.is_present("dry_run");
     // generate human readable file names instead of MD5 Hashed file names
     let use_human_readable = matches.is_present("human_readable");
+    // restrict downloads to these subreddits
+    let subreddits: Option<Vec<&str>> = if matches.is_present("subreddits") {
+        Some(matches.values_of("subreddits").unwrap().collect())
+    } else {
+        None
+    };
+    let unsave = matches.is_present("unsave");
 
     // initialize environment from the .env file
     dotenv::from_filename(env_file).ok();
@@ -99,6 +124,8 @@ async fn main() -> Result<(), ReddSaverError> {
         info!("USERNAME = {}", &username);
         info!("PASSWORD = {}", mask_sensitive(&password));
         info!("USER_AGENT = {}", &user_agent);
+        info!("SUBREDDITS = {}", print_subreddits(&subreddits));
+        info!("UNSAVE = {}", unsave);
 
         return Ok(());
     }
@@ -128,39 +155,20 @@ async fn main() -> Result<(), ReddSaverError> {
 
     info!("Starting data gathering from Reddit. This might take some time. Hold on....");
     // get the saved posts for this particular user
-    let saved_posts = user.saved().await?;
-    debug!("Saved Posts: {:#?}", saved_posts);
+    let saved = user.saved().await?;
+    debug!("Saved Posts: {:#?}", saved);
 
-    let mut full_summary = Summary {
-        images_supported: 0,
-        images_downloaded: 0,
-        images_skipped: 0,
-    };
-    for collection in &saved_posts {
-        full_summary = full_summary.add(
-            get_images_parallel(
-                &collection,
-                &data_directory,
-                to_download,
-                use_human_readable,
-            )
-            .await?,
-        );
-    }
+    let downloader = Downloader::new(
+        &user,
+        &saved,
+        &data_directory,
+        &subreddits,
+        should_download,
+        use_human_readable,
+        unsave,
+    );
 
-    info!("#####################################");
-    info!("Download Summary:");
-    info!(
-        "Number of supported images: {}",
-        full_summary.images_supported
-    );
-    info!(
-        "Number of images downloaded: {}",
-        full_summary.images_downloaded
-    );
-    info!("Number of images skipped: {}", full_summary.images_skipped);
-    info!("#####################################");
-    info!("FIN.");
+    downloader.run().await?;
 
     Ok(())
 }

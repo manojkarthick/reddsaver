@@ -2,10 +2,12 @@ use crate::auth::Auth;
 use crate::errors::ReddSaverError;
 use crate::structures::{UserAbout, UserSaved};
 use crate::utils::get_user_agent_string;
-use log::info;
+use log::{debug, info};
 use reqwest::header::USER_AGENT;
 use std::borrow::Borrow;
+use std::collections::HashMap;
 
+#[derive(Debug)]
 pub struct User<'a> {
     /// Contains authentication information about the user
     auth: &'a Auth,
@@ -32,6 +34,8 @@ impl<'a> User<'a> {
             .await?
             .json::<UserAbout>()
             .await?;
+
+        debug!("About Response: {:#?}", response);
 
         Ok(response)
     }
@@ -80,7 +84,7 @@ impl<'a> User<'a> {
                 saved.push(response);
                 complete = true;
             } else {
-                info!(
+                debug!(
                     "Processing till: {}",
                     response.borrow().data.after.as_ref().unwrap()
                 );
@@ -90,5 +94,24 @@ impl<'a> User<'a> {
         }
 
         Ok(saved)
+    }
+
+    pub async fn unsave(&self, name: &str) -> Result<(), ReddSaverError> {
+        let url = format!("https://oauth.reddit.com/api/unsave");
+        let client = reqwest::Client::new();
+        let mut map = HashMap::new();
+        map.insert("id", name);
+
+        let response = client
+            .post(&url)
+            .bearer_auth(&self.auth.access_token)
+            .header(USER_AGENT, get_user_agent_string(None, None))
+            .form(&map)
+            .send()
+            .await?;
+
+        debug!("Unsave response: {:#?}", response);
+
+        Ok(())
     }
 }
