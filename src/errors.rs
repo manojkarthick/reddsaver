@@ -23,4 +23,6 @@ pub enum ReddSaverError {
     DataDirNotFound,
     #[error("Could not create or save image")]
     IoError(#[from] std::io::Error),
+    #[error("Unable to parse URL")]
+    UrlError(#[from] url::ParseError),
 }

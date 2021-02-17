@@ -109,6 +109,21 @@ pub struct PostData {
     pub created_utc: Value,
     /// Gallery metadata
     pub gallery_data: Option<GalleryItems>,
+    /// Is post a video?
+    pub is_video: Option<bool>,
+    /// Reddit Media info
+    pub media: Option<PostMedia>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct PostMedia {
+    pub reddit_video: Option<RedditVideo>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct RedditVideo {
+    pub fallback_url: String,
+    pub is_gif: bool,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -125,14 +140,28 @@ pub struct GalleryItem {
     pub id: i64,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct GfyData {
+    #[serde(rename = "gfyItem")]
+    pub gfy_item: GfyItem,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct GfyItem {
+    #[serde(rename = "gifUrl")]
+    pub gif_url: String,
+    #[serde(rename = "mp4Url")]
+    pub mp4_url: String,
+}
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Summary {
     /// Number of images downloaded
-    pub images_downloaded: i32,
+    pub media_downloaded: i32,
     /// Number of images skipping downloading
-    pub images_skipped: i32,
+    pub media_skipped: i32,
     /// Number of images supported images present and parsable
-    pub images_supported: i32,
+    pub media_supported: i32,
 }
 
 impl Add for Summary {
@@ -140,9 +169,9 @@ impl Add for Summary {
 
     fn add(self, rhs: Self) -> Self::Output {
         Self {
-            images_supported: self.images_supported + rhs.images_supported,
-            images_downloaded: self.images_downloaded + rhs.images_downloaded,
-            images_skipped: self.images_skipped + rhs.images_skipped,
+            media_supported: self.media_supported + rhs.media_supported,
+            media_downloaded: self.media_downloaded + rhs.media_downloaded,
+            media_skipped: self.media_skipped + rhs.media_skipped,
         }
     }
 }
