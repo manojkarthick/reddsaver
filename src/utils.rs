@@ -1,7 +1,6 @@
-use std::path::Path;
-
 use rand::Rng;
 use random_names::RandomName;
+use std::path::Path;
 
 /// Generate user agent string of the form <name>:<version>.
 /// If no arguments passed generate random name and number
