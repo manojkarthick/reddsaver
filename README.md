@@ -17,6 +17,15 @@ You can download release binaries [here](https://github.com/manojkarthick/reddsa
 
 ### Alternative methods
 
+#### Using Homebrew
+
+If you are a homebrew user on macOS, you can install using `brew tap`:
+
+```shell
+brew tap manojkarthick/reddsaver
+brew install reddsaver
+```
+
 #### Using cargo
 
 If you already have Rust installed, you can also install using `cargo`: 
