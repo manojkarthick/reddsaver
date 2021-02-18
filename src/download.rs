@@ -20,7 +20,7 @@ use reqwest::StatusCode;
 static JPG_EXTENSION: &str = "jpg";
 static PNG_EXTENSION: &str = "png";
 static GIF_EXTENSION: &str = "gif";
-// static GIFV_EXTENSION: &str = "gifv";
+static GIFV_EXTENSION: &str = "gifv";
 static MP4_EXTENSION: &str = "mp4";
 
 static REDDIT_DOMAIN: &str = "reddit.com";
@@ -37,7 +37,13 @@ static GFYCAT_API_PREFIX: &str = "https://api.gfycat.com/v1/gfycats";
 static REDGIFS_DOMAIN: &str = "redgifs.com";
 static REDGIFS_API_PREFIX: &str = "https://api.redgifs.com/v1/gfycats";
 
-// static GIPHY_DOMAIN: &str = "giphy.com";
+static GIPHY_DOMAIN: &str = "giphy.com";
+static GIPHY_MEDIA_SUBDOMAIN: &str = "media.giphy.com";
+static GIPHY_MEDIA_SUBDOMAIN_0: &str = "media0.giphy.com";
+static GIPHY_MEDIA_SUBDOMAIN_1: &str = "media1.giphy.com";
+static GIPHY_MEDIA_SUBDOMAIN_2: &str = "media2.giphy.com";
+static GIPHY_MEDIA_SUBDOMAIN_3: &str = "media3.giphy.com";
+static GIPHY_MEDIA_SUBDOMAIN_4: &str = "media4.giphy.com";
 
 /// Status of image processing
 enum MediaStatus {
@@ -394,9 +400,32 @@ async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
         }
     }
 
+    //giphy
+    if url.contains(GIPHY_DOMAIN) {
+        if url.contains(GIPHY_MEDIA_SUBDOMAIN)
+            || url.contains(GIPHY_MEDIA_SUBDOMAIN_0)
+            || url.contains(GIPHY_MEDIA_SUBDOMAIN_1)
+            || url.contains(GIPHY_MEDIA_SUBDOMAIN_2)
+            || url.contains(GIPHY_MEDIA_SUBDOMAIN_3)
+            || url.contains(GIPHY_MEDIA_SUBDOMAIN_4)
+        {
+            if url.ends_with(GIF_EXTENSION)
+                || url.ends_with(MP4_EXTENSION)
+                || url.ends_with(GIFV_EXTENSION)
+            {
+                let translated = String::from(url);
+                media.push(translated);
+            }
+        } else {
+            let path = &parsed[Position::AfterHost..Position::AfterPath];
+            let media_id = path.split("-").last().unwrap();
+            let translated = format!("https://{}/media/{}.gif", GIPHY_MEDIA_SUBDOMAIN, media_id);
+            media.push(translated);
+        }
+    }
+
     // TODO:
     // Imgur - single images, image post, image gallery, imgur gifv
-    // Giphy domain - gifs
 
     Ok(media)
 }
