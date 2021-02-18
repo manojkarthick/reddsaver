@@ -45,9 +45,9 @@ static GIPHY_MEDIA_SUBDOMAIN_2: &str = "media2.giphy.com";
 static GIPHY_MEDIA_SUBDOMAIN_3: &str = "media3.giphy.com";
 static GIPHY_MEDIA_SUBDOMAIN_4: &str = "media4.giphy.com";
 
-/// Status of image processing
+/// Status of media processing
 enum MediaStatus {
-    /// If we are able to successfully download the image
+    /// If we are able to successfully download the media
     Downloaded,
     /// If we are skipping downloading the media due to it already being present
     /// or because we could not find the media or because we are unable to decode
@@ -314,6 +314,7 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
     Ok(true)
 }
 
+/// Convert Gfycat/Redgifs GIFs into mp4 URLs for download
 async fn gfy_to_mp4(url: &str) -> Result<Option<String>, ReddSaverError> {
     let api_prefix = if url.contains(GFYCAT_DOMAIN) {
         GFYCAT_API_PREFIX
@@ -327,7 +328,11 @@ async fn gfy_to_mp4(url: &str) -> Result<Option<String>, ReddSaverError> {
         debug!("GFY API URL: {}", api_url);
         let client = reqwest::Client::new();
 
+        // talk to gfycat API and get GIF information
         let response = client.get(&api_url).send().await?;
+        // if the gif is not available anymore, Gfycat might send
+        // a 404 response. Proceed to get the mp4 URL only if the
+        // response was HTTP 200
         if response.status() == StatusCode::OK {
             let data = response.json::<GfyData>().await?;
             Ok(Some(data.gfy_item.mp4_url))
@@ -350,6 +355,8 @@ async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
 
     // reddit images and gifs
     if url.contains(REDDIT_IMAGE_SUBDOMAIN) {
+        // if the URL uses the reddit image subdomain and if the extension is
+        // jpg, png or gif, then we can use the URL as is.
         if url.ends_with(JPG_EXTENSION)
             || url.ends_with(PNG_EXTENSION)
             || url.ends_with(GIF_EXTENSION)
@@ -361,10 +368,15 @@ async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
 
     // reddit mp4 videos
     if url.contains(REDDIT_VIDEO_SUBDOMAIN) {
+        // if the URL uses the reddit video subdomain and if the extension is
+        // mp4, then we can use the URL as is.
         if url.ends_with(MP4_EXTENSION) {
             let translated = String::from(url);
             media.push(translated);
         } else {
+            // if the URL uses the reddit video subdomain, but the link does not
+            // point directly to the mp4, then use the fallback URL to get the
+            // appropriate link. The video quality might range from 96p to 720p
             if let Some(m) = &data.media {
                 if let Some(v) = &m.reddit_video {
                     let translated = String::from(&v.fallback_url).replace("?source=fallback", "");
@@ -378,7 +390,7 @@ async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
     if url.contains(REDDIT_DOMAIN) && url.contains(REDDIT_GALLERY_PATH) {
         if let Some(gallery) = gallery_info {
             for item in gallery.items.iter() {
-                // TODO: fixme; use better way to create this URL
+                // extract the media ID from each gallery item and reconstruct the image URL
                 let translated = format!(
                     "https://{}/{}.{}",
                     REDDIT_IMAGE_SUBDOMAIN, item.media_id, JPG_EXTENSION
@@ -390,10 +402,15 @@ async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
 
     // gfycat and redgifs
     if url.contains(GFYCAT_DOMAIN) || url.contains(REDGIFS_DOMAIN) {
+        // if the Gfycat/Redgifs URL points directly to the mp4, download as is
         if url.ends_with(MP4_EXTENSION) {
             let translated = String::from(url);
             media.push(translated);
         } else {
+            // if the provided link is a gfycat post link, use the gfycat API
+            // to get the URL. gfycat likes to use lowercase names in their posts
+            // but the ID for the GIF is Pascal-cased. The case-conversion info
+            // can only be obtained from the API at the moment
             if let Some(mp4_url) = gfy_to_mp4(url).await? {
                 media.push(mp4_url);
             }
@@ -402,6 +419,8 @@ async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
 
     // giphy
     if url.contains(GIPHY_DOMAIN) {
+        // giphy has multiple CDN networks named {media0, .., media5}
+        // links can point to the canonical media subdomain or any content domains
         if url.contains(GIPHY_MEDIA_SUBDOMAIN)
             || url.contains(GIPHY_MEDIA_SUBDOMAIN_0)
             || url.contains(GIPHY_MEDIA_SUBDOMAIN_1)
@@ -409,6 +428,7 @@ async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
             || url.contains(GIPHY_MEDIA_SUBDOMAIN_3)
             || url.contains(GIPHY_MEDIA_SUBDOMAIN_4)
         {
+            // if we encounter gif, mp4 or gifv - download as is
             if url.ends_with(GIF_EXTENSION)
                 || url.ends_with(MP4_EXTENSION)
                 || url.ends_with(GIFV_EXTENSION)
@@ -417,6 +437,8 @@ async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
                 media.push(translated);
             }
         } else {
+            // if the link points to the giphy post rather than the media link,
+            // use the scheme below to get the actual URL for the gif.
             let path = &parsed[Position::AfterHost..Position::AfterPath];
             let media_id = path.split("-").last().unwrap();
             let translated = format!("https://{}/media/{}.gif", GIPHY_MEDIA_SUBDOMAIN, media_id);
@@ -429,6 +451,7 @@ async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
     // *No* support for image and gallery posts.
     if url.contains(IMGUR_DOMAIN) {
         if url.contains(IMGUR_SUBDOMAIN) && url.ends_with(GIFV_EXTENSION) {
+            // if the extension is gifv, then replace gifv->mp4 to get the video URL
             let translated = url.replace(GIFV_EXTENSION, MP4_EXTENSION);
             media.push(translated);
         }
