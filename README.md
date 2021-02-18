@@ -1,8 +1,13 @@
 # Reddsaver ![build](https://github.com/manojkarthick/reddsaver/workflows/build/badge.svg) [![Crates.io](https://img.shields.io/crates/v/reddsaver.svg)](https://crates.io/crates/reddsaver)
 
-* Command line tool to download saved images from Reddit 
-* Supports png/jpg images only
-* Also supports downloading images from Reddit image galleries 
+* Command line tool to download saved media from Reddit
+* Supports:
+  - Reddit: PNG/JPG images, GIFs, Image galleries, videos
+  - Giphy: GIFs
+  - Imgur: Direct images and GIFVs
+  - Gfycat/Redgifs: GIFs
+* GIF/GIFV from Imgur/Gfycat/Redgifs are downloaded as mp4
+* Does *not* support downloading images from Imgur post links
 
 ## Installation
 
@@ -35,7 +40,7 @@ home.packages = [
 
 #### Building and running from source
 
-Make sure you have rustc `v1.48.0` and cargo installed on your machine.
+Make sure you have rustc `v1.50.0` and cargo installed on your machine.
 ```shell script
 git clone https://github.com/manojkarthick/reddsaver.git
 cargo build --release
@@ -101,39 +106,31 @@ View it in action here:
 Optionally override the values for the directory to save and the env file to read from:
 
 ```shell script
-ReddSaver 0.2.2
+ReddSaver 0.3.0
 Manoj Karthick Selva Kumar
-Simple CLI tool to download saved images from Reddit
+Simple CLI tool to download saved media from Reddit
 
 USAGE:
     reddsaver [FLAGS] [OPTIONS]
 
 FLAGS:
-    -r, --dry-run           Dry run and print the URLs of saved images to download
+    -r, --dry-run           Dry run and print the URLs of saved media to download
     -h, --help              Prints help information
     -H, --human-readable    Use human readable names for files
     -s, --show-config       Show the current config being used
+    -U, --unsave            Unsave post after processing
     -V, --version           Prints version information
 
 OPTIONS:
-    -d, --data-dir <DATA_DIR>    Directory to save the images to [default: data]
-    -e, --from-env <ENV_FILE>    Set a custom .env style file with secrets [default: .env]
+    -d, --data-dir <DATA_DIR>           Directory to save the media to [default: data]
+    -e, --from-env <ENV_FILE>           Set a custom .env style file with secrets [default: .env]
+    -S, --subreddits <SUBREDDITS>...    Download media from these subreddits only
 ```
 
 Some points to note:
 
 * By default, reddsaver generates filenames for the images using a MD5 Hash of the URLs. You can instead generate human readable names using the `--human-readable` flag.
 * You can check the configuration used by ReddSaver by using the `--show-config` flag.
-
-
-## TODO
-- [x] Separate dockerfiles
-- [x] Publish to Crates.io
-- [x] Publish docker images
-- [x] Human readable file names
-- [x] Option to show configuration used
-- [x] Option to dry run the download process
-- [ ] GIF support
 
 ## Other Information
 
