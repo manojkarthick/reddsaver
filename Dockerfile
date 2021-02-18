@@ -1,4 +1,4 @@
-FROM rust:1.47.0
+FROM rust:1.50.0
 WORKDIR /usr/src
 
 RUN USER=root cargo new reddsaver

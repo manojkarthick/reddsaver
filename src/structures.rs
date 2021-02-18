@@ -156,11 +156,11 @@ pub struct GfyItem {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Summary {
-    /// Number of images downloaded
+    /// Number of media downloaded
     pub media_downloaded: i32,
-    /// Number of images skipping downloading
+    /// Number of media skipping downloading
     pub media_skipped: i32,
-    /// Number of images supported images present and parsable
+    /// Number of media supported present and parsable
     pub media_supported: i32,
 }
 

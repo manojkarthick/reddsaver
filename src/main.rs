@@ -24,7 +24,7 @@ async fn main() -> Result<(), ReddSaverError> {
     let matches = App::new("ReddSaver")
         .version(crate_version!())
         .author("Manoj Karthick Selva Kumar")
-        .about("Simple CLI tool to download saved images from Reddit")
+        .about("Simple CLI tool to download saved media from Reddit")
         .arg(
             Arg::with_name("environment")
                 .short("e")
@@ -39,7 +39,7 @@ async fn main() -> Result<(), ReddSaverError> {
                 .short("d")
                 .long("data-dir")
                 .value_name("DATA_DIR")
-                .help("Directory to save the images to")
+                .help("Directory to save the media to")
                 .default_value("data")
                 .takes_value(true),
         )
@@ -55,7 +55,7 @@ async fn main() -> Result<(), ReddSaverError> {
                 .short("r")
                 .long("dry-run")
                 .takes_value(false)
-                .help("Dry run and print the URLs of saved images to download"),
+                .help("Dry run and print the URLs of saved media to download"),
         )
         .arg(
             Arg::with_name("human_readable")
@@ -71,7 +71,7 @@ async fn main() -> Result<(), ReddSaverError> {
                 .multiple(true)
                 .value_name("SUBREDDITS")
                 .value_delimiter(",")
-                .help("Download images from these subreddits only")
+                .help("Download media from these subreddits only")
                 .takes_value(true),
         )
         .arg(
@@ -85,7 +85,7 @@ async fn main() -> Result<(), ReddSaverError> {
 
     let env_file = matches.value_of("environment").unwrap();
     let data_directory = String::from(matches.value_of("data_directory").unwrap());
-    // generate the URLs to download from without actually downloading the images
+    // generate the URLs to download from without actually downloading the media
     let should_download = !matches.is_present("dry_run");
     // generate human readable file names instead of MD5 Hashed file names
     let use_human_readable = matches.is_present("human_readable");

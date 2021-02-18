@@ -73,7 +73,7 @@ impl<'a> User<'a> {
                 .await?;
 
             // total number of items processed by the method
-            // note that not all of these items are images, so the downloaded images will be
+            // note that not all of these items are media, so the downloaded media will be
             // lesser than or equal to the number of items present
             processed += response.borrow().data.dist;
             info!("Number of items processed : {}", processed);
@@ -102,6 +102,7 @@ impl<'a> User<'a> {
         let mut map = HashMap::new();
         map.insert("id", name);
 
+        // convenience method to unsave reddit posts
         let response = client
             .post(&url)
             .bearer_auth(&self.auth.access_token)
