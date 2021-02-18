@@ -28,8 +28,8 @@ static REDDIT_IMAGE_SUBDOMAIN: &str = "i.redd.it";
 static REDDIT_VIDEO_SUBDOMAIN: &str = "v.redd.it";
 static REDDIT_GALLERY_PATH: &str = "gallery";
 
-// static IMGUR_DOMAIN: &str = "imgur.com";
-// static IMGUR_SUBDOMAIN: &str = "i.imgur.com";
+static IMGUR_DOMAIN: &str = "imgur.com";
+static IMGUR_SUBDOMAIN: &str = "i.imgur.com";
 
 static GFYCAT_DOMAIN: &str = "gfycat.com";
 static GFYCAT_API_PREFIX: &str = "https://api.gfycat.com/v1/gfycats";
@@ -400,7 +400,7 @@ async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
         }
     }
 
-    //giphy
+    // giphy
     if url.contains(GIPHY_DOMAIN) {
         if url.contains(GIPHY_MEDIA_SUBDOMAIN)
             || url.contains(GIPHY_MEDIA_SUBDOMAIN_0)
@@ -424,8 +424,21 @@ async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
         }
     }
 
-    // TODO:
-    // Imgur - single images, image post, image gallery, imgur gifv
+    // imgur
+    // NOTE: only support direct links for gifv and images
+    // *No* support for image and gallery posts.
+    if url.contains(IMGUR_DOMAIN) {
+        if url.contains(IMGUR_SUBDOMAIN) && url.ends_with(GIFV_EXTENSION) {
+            let translated = url.replace(GIFV_EXTENSION, MP4_EXTENSION);
+            media.push(translated);
+        }
+        if url.contains(IMGUR_SUBDOMAIN)
+            && (url.ends_with(PNG_EXTENSION) || url.ends_with(JPG_EXTENSION))
+        {
+            let translated = String::from(url);
+            media.push(translated);
+        }
+    }
 
     Ok(media)
 }
