@@ -65,7 +65,7 @@ mkdir -pv data/
 docker run --rm \
     --volume="$PWD/data:/app/data" \
     --volume="$PWD/reddsaver.env:/app/reddsaver.env" \
-    reddsaver:latest -d /app/data -e /app/reddsaver.env
+    manojkarthick/reddsaver:latest -d /app/data -e /app/reddsaver.env
 ```
 
 ## Running
