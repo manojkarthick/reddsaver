@@ -26,6 +26,13 @@ brew tap manojkarthick/reddsaver
 brew install reddsaver
 ```
 
+#### Arch Linux
+
+If you are an ArchLinux user, then you can use a tool like `yay` or `paru` to install it from the [AUR](https://aur.archlinux.org/packages/reddsaver-bin/): 
+```shell script
+yay -S reddsaver
+```
+
 #### Using cargo
 
 If you already have Rust installed, you can also install using `cargo`: 
