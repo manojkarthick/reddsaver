@@ -7,7 +7,7 @@ use std::{fs, io};
 
 use futures::stream::FuturesUnordered;
 use futures::TryStreamExt;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use url::{Position, Url};
 
 use crate::errors::ReddSaverError;
@@ -295,23 +295,44 @@ async fn save_or_skip(url: &str, file_name: &str) -> Result<MediaStatus, ReddSav
 async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverError> {
     // create directory if it does not already exist
     // the directory is created relative to the current working directory
+    let mut status = false;
     let directory = Path::new(file_name).parent().unwrap();
     match fs::create_dir_all(directory) {
         Ok(_) => (),
         Err(_e) => return Err(ReddSaverError::CouldNotCreateDirectory),
     }
 
-    let data = reqwest::get(url).await?.bytes().await?;
-    let mut output = File::create(&file_name)?;
-    match io::copy(&mut data.as_ref(), &mut output) {
-        Ok(_) => info!("Successfully saved media: {} from url {}", file_name, url),
-        Err(_e) => {
-            error!("Could not save media from url {} to {}", url, file_name);
-            return Ok(false);
+    let maybe_response = reqwest::get(url).await;
+    if let Ok(response) = maybe_response {
+        debug!("URL Response: {:#?}", response);
+        let maybe_data = response.bytes().await;
+        if let Ok(data) = maybe_data {
+            debug!("Bytes length of the data: {:#?}", data.len());
+            let maybe_output = File::create(&file_name);
+            match maybe_output {
+                Ok(mut output) => {
+                    debug!("Created a file: {}", file_name);
+                    match io::copy(&mut data.as_ref(), &mut output) {
+                        Ok(_) => {
+                            info!("Successfully saved media: {} from url {}", file_name, url);
+                            status = true;
+                        }
+                        Err(_e) => {
+                            error!("Could not save media from url {} to {}", url, file_name);
+                        }
+                    }
+                }
+                Err(_) => {
+                    warn!(
+                        "Could not create a file with the name: {}. Skipping",
+                        file_name
+                    );
+                }
+            }
         }
     }
 
-    Ok(true)
+    Ok(status)
 }
 
 /// Convert Gfycat/Redgifs GIFs into mp4 URLs for download
@@ -347,119 +368,129 @@ async fn gfy_to_mp4(url: &str) -> Result<Option<String>, ReddSaverError> {
 /// Check if a particular URL contains supported media.
 async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
     let original = data.url.as_ref().unwrap();
-    let mut parsed = Url::parse(original)?;
-    parsed.path_segments_mut().unwrap().pop_if_empty();
-    let url = &parsed[..Position::AfterPath];
-    let gallery_info = data.gallery_data.borrow();
     let mut media: Vec<String> = Vec::new();
 
-    // reddit images and gifs
-    if url.contains(REDDIT_IMAGE_SUBDOMAIN) {
-        // if the URL uses the reddit image subdomain and if the extension is
-        // jpg, png or gif, then we can use the URL as is.
-        if url.ends_with(JPG_EXTENSION)
-            || url.ends_with(PNG_EXTENSION)
-            || url.ends_with(GIF_EXTENSION)
-        {
-            let translated = String::from(url);
-            media.push(translated);
-        }
-    }
+    if let Ok(u) = Url::parse(original) {
+        let mut parsed = u.clone();
 
-    // reddit mp4 videos
-    if url.contains(REDDIT_VIDEO_SUBDOMAIN) {
-        // if the URL uses the reddit video subdomain and if the extension is
-        // mp4, then we can use the URL as is.
-        if url.ends_with(MP4_EXTENSION) {
-            let translated = String::from(url);
-            media.push(translated);
-        } else {
-            // if the URL uses the reddit video subdomain, but the link does not
-            // point directly to the mp4, then use the fallback URL to get the
-            // appropriate link. The video quality might range from 96p to 720p
-            if let Some(m) = &data.media {
-                if let Some(v) = &m.reddit_video {
-                    let translated = String::from(&v.fallback_url).replace("?source=fallback", "");
-                    media.push(translated);
-                }
-            }
-        }
-    }
+        match parsed.path_segments_mut() {
+            Ok(mut p) => p.pop_if_empty(),
+            Err(_) => return Ok(media),
+        };
 
-    // reddit image galleries
-    if url.contains(REDDIT_DOMAIN) && url.contains(REDDIT_GALLERY_PATH) {
-        if let Some(gallery) = gallery_info {
-            for item in gallery.items.iter() {
-                // extract the media ID from each gallery item and reconstruct the image URL
-                let translated = format!(
-                    "https://{}/{}.{}",
-                    REDDIT_IMAGE_SUBDOMAIN, item.media_id, JPG_EXTENSION
-                );
-                media.push(translated);
-            }
-        }
-    }
+        let url = &parsed[..Position::AfterPath];
+        let gallery_info = data.gallery_data.borrow();
 
-    // gfycat and redgifs
-    if url.contains(GFYCAT_DOMAIN) || url.contains(REDGIFS_DOMAIN) {
-        // if the Gfycat/Redgifs URL points directly to the mp4, download as is
-        if url.ends_with(MP4_EXTENSION) {
-            let translated = String::from(url);
-            media.push(translated);
-        } else {
-            // if the provided link is a gfycat post link, use the gfycat API
-            // to get the URL. gfycat likes to use lowercase names in their posts
-            // but the ID for the GIF is Pascal-cased. The case-conversion info
-            // can only be obtained from the API at the moment
-            if let Some(mp4_url) = gfy_to_mp4(url).await? {
-                media.push(mp4_url);
-            }
-        }
-    }
-
-    // giphy
-    if url.contains(GIPHY_DOMAIN) {
-        // giphy has multiple CDN networks named {media0, .., media5}
-        // links can point to the canonical media subdomain or any content domains
-        if url.contains(GIPHY_MEDIA_SUBDOMAIN)
-            || url.contains(GIPHY_MEDIA_SUBDOMAIN_0)
-            || url.contains(GIPHY_MEDIA_SUBDOMAIN_1)
-            || url.contains(GIPHY_MEDIA_SUBDOMAIN_2)
-            || url.contains(GIPHY_MEDIA_SUBDOMAIN_3)
-            || url.contains(GIPHY_MEDIA_SUBDOMAIN_4)
-        {
-            // if we encounter gif, mp4 or gifv - download as is
-            if url.ends_with(GIF_EXTENSION)
-                || url.ends_with(MP4_EXTENSION)
-                || url.ends_with(GIFV_EXTENSION)
+        // reddit images and gifs
+        if url.contains(REDDIT_IMAGE_SUBDOMAIN) {
+            // if the URL uses the reddit image subdomain and if the extension is
+            // jpg, png or gif, then we can use the URL as is.
+            if url.ends_with(JPG_EXTENSION)
+                || url.ends_with(PNG_EXTENSION)
+                || url.ends_with(GIF_EXTENSION)
             {
                 let translated = String::from(url);
                 media.push(translated);
             }
-        } else {
-            // if the link points to the giphy post rather than the media link,
-            // use the scheme below to get the actual URL for the gif.
-            let path = &parsed[Position::AfterHost..Position::AfterPath];
-            let media_id = path.split("-").last().unwrap();
-            let translated = format!("https://{}/media/{}.gif", GIPHY_MEDIA_SUBDOMAIN, media_id);
-            media.push(translated);
         }
-    }
 
-    // imgur
-    // NOTE: only support direct links for gifv and images
-    // *No* support for image and gallery posts.
-    if url.contains(IMGUR_DOMAIN) {
-        if url.contains(IMGUR_SUBDOMAIN) && url.ends_with(GIFV_EXTENSION) {
-            // if the extension is gifv, then replace gifv->mp4 to get the video URL
-            let translated = url.replace(GIFV_EXTENSION, MP4_EXTENSION);
-            media.push(translated);
+        // reddit mp4 videos
+        if url.contains(REDDIT_VIDEO_SUBDOMAIN) {
+            // if the URL uses the reddit video subdomain and if the extension is
+            // mp4, then we can use the URL as is.
+            if url.ends_with(MP4_EXTENSION) {
+                let translated = String::from(url);
+                media.push(translated);
+            } else {
+                // if the URL uses the reddit video subdomain, but the link does not
+                // point directly to the mp4, then use the fallback URL to get the
+                // appropriate link. The video quality might range from 96p to 720p
+                if let Some(m) = &data.media {
+                    if let Some(v) = &m.reddit_video {
+                        let translated =
+                            String::from(&v.fallback_url).replace("?source=fallback", "");
+                        media.push(translated);
+                    }
+                }
+            }
         }
-        if url.contains(IMGUR_SUBDOMAIN)
-            && (url.ends_with(PNG_EXTENSION) || url.ends_with(JPG_EXTENSION))
-        {
-            let translated = String::from(url);
-            media.push(translated);
+
+        // reddit image galleries
+        if url.contains(REDDIT_DOMAIN) && url.contains(REDDIT_GALLERY_PATH) {
+            if let Some(gallery) = gallery_info {
+                for item in gallery.items.iter() {
+                    // extract the media ID from each gallery item and reconstruct the image URL
+                    let translated = format!(
+                        "https://{}/{}.{}",
+                        REDDIT_IMAGE_SUBDOMAIN, item.media_id, JPG_EXTENSION
+                    );
+                    media.push(translated);
+                }
+            }
+        }
+
+        // gfycat and redgifs
+        if url.contains(GFYCAT_DOMAIN) || url.contains(REDGIFS_DOMAIN) {
+            // if the Gfycat/Redgifs URL points directly to the mp4, download as is
+            if url.ends_with(MP4_EXTENSION) {
+                let translated = String::from(url);
+                media.push(translated);
+            } else {
+                // if the provided link is a gfycat post link, use the gfycat API
+                // to get the URL. gfycat likes to use lowercase names in their posts
+                // but the ID for the GIF is Pascal-cased. The case-conversion info
+                // can only be obtained from the API at the moment
+                if let Some(mp4_url) = gfy_to_mp4(url).await? {
+                    media.push(mp4_url);
+                }
+            }
+        }
+
+        // giphy
+        if url.contains(GIPHY_DOMAIN) {
+            // giphy has multiple CDN networks named {media0, .., media5}
+            // links can point to the canonical media subdomain or any content domains
+            if url.contains(GIPHY_MEDIA_SUBDOMAIN)
+                || url.contains(GIPHY_MEDIA_SUBDOMAIN_0)
+                || url.contains(GIPHY_MEDIA_SUBDOMAIN_1)
+                || url.contains(GIPHY_MEDIA_SUBDOMAIN_2)
+                || url.contains(GIPHY_MEDIA_SUBDOMAIN_3)
+                || url.contains(GIPHY_MEDIA_SUBDOMAIN_4)
+            {
+                // if we encounter gif, mp4 or gifv - download as is
+                if url.ends_with(GIF_EXTENSION)
+                    || url.ends_with(MP4_EXTENSION)
+                    || url.ends_with(GIFV_EXTENSION)
+                {
+                    let translated = String::from(url);
+                    media.push(translated);
+                }
+            } else {
+                // if the link points to the giphy post rather than the media link,
+                // use the scheme below to get the actual URL for the gif.
+                let path = &parsed[Position::AfterHost..Position::AfterPath];
+                let media_id = path.split("-").last().unwrap();
+                let translated =
+                    format!("https://{}/media/{}.gif", GIPHY_MEDIA_SUBDOMAIN, media_id);
+                media.push(translated);
+            }
+        }
+
+        // imgur
+        // NOTE: only support direct links for gifv and images
+        // *No* support for image and gallery posts.
+        if url.contains(IMGUR_DOMAIN) {
+            if url.contains(IMGUR_SUBDOMAIN) && url.ends_with(GIFV_EXTENSION) {
+                // if the extension is gifv, then replace gifv->mp4 to get the video URL
+                let translated = url.replace(GIFV_EXTENSION, MP4_EXTENSION);
+                media.push(translated);
+            }
+            if url.contains(IMGUR_SUBDOMAIN)
+                && (url.ends_with(PNG_EXTENSION) || url.ends_with(JPG_EXTENSION))
+            {
+                let translated = String::from(url);
+                media.push(translated);
+            }
         }
     }
 
