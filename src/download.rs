@@ -7,7 +7,7 @@ use std::{fs, io};
 
 use futures::stream::FuturesUnordered;
 use futures::TryStreamExt;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use url::{Position, Url};
 
 use crate::errors::ReddSaverError;
@@ -295,23 +295,44 @@ async fn save_or_skip(url: &str, file_name: &str) -> Result<MediaStatus, ReddSav
 async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverError> {
     // create directory if it does not already exist
     // the directory is created relative to the current working directory
+    let mut status = false;
     let directory = Path::new(file_name).parent().unwrap();
     match fs::create_dir_all(directory) {
         Ok(_) => (),
         Err(_e) => return Err(ReddSaverError::CouldNotCreateDirectory),
     }
 
-    let data = reqwest::get(url).await?.bytes().await?;
-    let mut output = File::create(&file_name)?;
-    match io::copy(&mut data.as_ref(), &mut output) {
-        Ok(_) => info!("Successfully saved media: {} from url {}", file_name, url),
-        Err(_e) => {
-            error!("Could not save media from url {} to {}", url, file_name);
-            return Ok(false);
+    let maybe_response = reqwest::get(url).await;
+    if let Ok(response) = maybe_response {
+        debug!("URL Response: {:#?}", response);
+        let maybe_data = response.bytes().await;
+        if let Ok(data) = maybe_data {
+            debug!("Bytes length of the data: {:#?}", data.len());
+            let maybe_output = File::create(&file_name);
+            match maybe_output {
+                Ok(mut output) => {
+                    debug!("Created a file: {}", file_name);
+                    match io::copy(&mut data.as_ref(), &mut output) {
+                        Ok(_) => {
+                            info!("Successfully saved media: {} from url {}", file_name, url);
+                            status = true;
+                        }
+                        Err(_e) => {
+                            error!("Could not save media from url {} to {}", url, file_name);
+                        }
+                    }
+                }
+                Err(_) => {
+                    warn!(
+                        "Could not create a file with the name: {}. Skipping",
+                        file_name
+                    );
+                }
+            }
         }
     }
 
-    Ok(true)
+    Ok(status)
 }
 
 /// Convert Gfycat/Redgifs GIFs into mp4 URLs for download
