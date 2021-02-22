@@ -88,10 +88,10 @@ docker run --rm \
 2. Copy the client ID and client secret information returned
 3. Create a .env file with the following keys, for example `reddsaver.env`:  
 ```shell script
-CLIENT_ID=<client_id>
-CLIENT_SECRET=<client_secret>
-USERNAME=<username>
-PASSWORD=<password>
+CLIENT_ID="<client_id>"
+CLIENT_SECRET="<client_secret>"
+USERNAME="<username>"
+PASSWORD="<password>"
 ```
 _NOTE_: If you have 2FA enabled, please make sure you set `PASSWORD=<password>:<2FA_TOTP_token>` instead
 
@@ -105,6 +105,12 @@ mkdir -pv reddsaver/
 reddsaver --help
 
 # Check if the right configuration has been picked up
+# NOTE: In case the `USERNAME` variable is being overriden by
+# your system username, please use 
+# On Linux/Mac - unset USERNAME
+# On Windows - set USERNAME=
+# before running to temporarily remove the system username
+# from your environment
 reddsaver -e reddsaver.env -d reddsaver --show-config  
 
 # Run the app to download the saved images
