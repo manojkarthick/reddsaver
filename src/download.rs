@@ -12,8 +12,8 @@ use url::{Position, Url};
 
 use crate::errors::ReddSaverError;
 use crate::structures::{GfyData, PostData};
-use crate::structures::{Summary, UserSaved};
-use crate::user::User;
+use crate::structures::{Listing, Summary};
+use crate::user::{ListingType, User};
 use crate::utils::check_path_present;
 use reqwest::StatusCode;
 
@@ -58,32 +58,35 @@ enum MediaStatus {
 #[derive(Debug)]
 pub struct Downloader<'a> {
     user: &'a User<'a>,
-    saved: &'a Vec<UserSaved>,
+    listing: &'a Vec<Listing>,
+    listing_type: &'a ListingType,
     data_directory: &'a str,
     subreddits: &'a Option<Vec<&'a str>>,
     should_download: bool,
     use_human_readable: bool,
-    unsave: bool,
+    undo: bool,
 }
 
 impl<'a> Downloader<'a> {
     pub fn new(
         user: &'a User,
-        saved: &'a Vec<UserSaved>,
+        listing: &'a Vec<Listing>,
+        listing_type: &'a ListingType,
         data_directory: &'a str,
         subreddits: &'a Option<Vec<&'a str>>,
         should_download: bool,
         use_human_readable: bool,
-        unsave: bool,
+        undo: bool,
     ) -> Downloader<'a> {
         Downloader {
             user,
-            saved,
+            listing,
+            listing_type,
             data_directory,
             subreddits,
             should_download,
             use_human_readable,
-            unsave,
+            undo,
         }
     }
 
@@ -94,8 +97,11 @@ impl<'a> Downloader<'a> {
             media_supported: 0,
         };
 
-        for collection in self.saved {
-            full_summary = full_summary.add(self.download_collection(collection).await?);
+        for collection in self.listing {
+            full_summary = full_summary.add(
+                self.download_collection(collection, self.listing_type)
+                    .await?,
+            );
         }
 
         info!("#####################################");
@@ -116,7 +122,11 @@ impl<'a> Downloader<'a> {
     }
 
     /// Download and save medias from Reddit in parallel
-    async fn download_collection(&self, collection: &UserSaved) -> Result<Summary, ReddSaverError> {
+    async fn download_collection(
+        &self,
+        collection: &Listing,
+        listing_type: &ListingType,
+    ) -> Result<Summary, ReddSaverError> {
         let summary = Arc::new(Mutex::new(Summary {
             media_supported: 0,
             media_downloaded: 0,
@@ -195,8 +205,8 @@ impl<'a> Downloader<'a> {
                         );
                     }
 
-                    if self.unsave {
-                        self.user.unsave(post_name).await?;
+                    if self.undo {
+                        self.user.undo(post_name, listing_type).await?;
                     }
 
                     Ok::<(), ReddSaverError>(())
