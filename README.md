@@ -1,6 +1,6 @@
 # Reddsaver ![build](https://github.com/manojkarthick/reddsaver/workflows/build/badge.svg) [![Crates.io](https://img.shields.io/crates/v/reddsaver.svg)](https://crates.io/crates/reddsaver)
 
-* Command line tool to download saved media from Reddit
+* Command line tool to download saved/upvoted media from Reddit
 * Supports:
   - Reddit: PNG/JPG images, GIFs, Image galleries, videos
   - Giphy: GIFs
@@ -113,8 +113,11 @@ reddsaver --help
 # from your environment
 reddsaver -e reddsaver.env -d reddsaver --show-config  
 
-# Run the app to download the saved images
+# Run the app to download the saved media
 reddsaver -e reddsaver.env -d reddsaver
+
+# Also allows you to download upvoted media
+reddsaver -e reddsaver.env -d reddsaver --upvoted
 ```
 
 NOTE: When running the application beyond the first time, if you use the directory as the initial run, the application will skip downloading the images that have already been downloaded.
@@ -128,7 +131,7 @@ View it in action here:
 Optionally override the values for the directory to save and the env file to read from:
 
 ```shell script
-ReddSaver 0.3.0
+ReddSaver 0.3.2
 Manoj Karthick Selva Kumar
 Simple CLI tool to download saved media from Reddit
 
@@ -140,7 +143,8 @@ FLAGS:
     -h, --help              Prints help information
     -H, --human-readable    Use human readable names for files
     -s, --show-config       Show the current config being used
-    -U, --unsave            Unsave post after processing
+    -U, --undo              Unsave or remote upvote for post after processing
+    -u, --upvoted           Download media from upvoted posts
     -V, --version           Prints version information
 
 OPTIONS:
