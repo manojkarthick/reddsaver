@@ -42,7 +42,7 @@ pub struct UserAbout {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct UserSaved {
+pub struct Listing {
     /// The kind of object this is. eg: Comment, Account, Subreddit, etc.
     pub kind: String,
     /// Contains the data for the children of the listing.

@@ -9,7 +9,7 @@ use auth::Client;
 use crate::download::Downloader;
 use crate::errors::ReddSaverError;
 use crate::errors::ReddSaverError::DataDirNotFound;
-use crate::user::User;
+use crate::user::{ListingType, User};
 use crate::utils::*;
 
 mod auth;
@@ -75,11 +75,18 @@ async fn main() -> Result<(), ReddSaverError> {
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("unsave")
-                .short("U")
-                .long("--unsave")
+            Arg::with_name("upvoted")
+                .short("u")
+                .long("--upvoted")
                 .takes_value(false)
-                .help("Unsave post after processing"),
+                .help("Download media from upvoted posts"),
+        )
+        .arg(
+            Arg::with_name("undo")
+                .short("U")
+                .long("undo")
+                .takes_value(false)
+                .help("Unsave or remote upvote for post after processing"),
         )
         .get_matches();
 
@@ -95,7 +102,14 @@ async fn main() -> Result<(), ReddSaverError> {
     } else {
         None
     };
-    let unsave = matches.is_present("unsave");
+    let upvoted = matches.is_present("upvoted");
+    let listing_type = if upvoted {
+        &ListingType::Upvoted
+    } else {
+        &ListingType::Saved
+    };
+
+    let undo = matches.is_present("undo");
 
     // initialize environment from the .env file
     dotenv::from_filename(env_file).ok();
@@ -125,7 +139,8 @@ async fn main() -> Result<(), ReddSaverError> {
         info!("PASSWORD = {}", mask_sensitive(&password));
         info!("USER_AGENT = {}", &user_agent);
         info!("SUBREDDITS = {}", print_subreddits(&subreddits));
-        info!("UNSAVE = {}", unsave);
+        info!("UPVOTED = {}", upvoted);
+        info!("UNDO = {}", undo);
 
         return Ok(());
     }
@@ -154,18 +169,19 @@ async fn main() -> Result<(), ReddSaverError> {
     info!("Link Karma: {:#?}", user_info.data.link_karma);
 
     info!("Starting data gathering from Reddit. This might take some time. Hold on....");
-    // get the saved posts for this particular user
-    let saved = user.saved().await?;
-    debug!("Saved Posts: {:#?}", saved);
+    // get the saved/upvoted posts for this particular user
+    let listing = user.listing(listing_type).await?;
+    debug!("Posts: {:#?}", listing);
 
     let downloader = Downloader::new(
         &user,
-        &saved,
+        &listing,
+        &listing_type,
         &data_directory,
         &subreddits,
         should_download,
         use_human_readable,
-        unsave,
+        undo,
     );
 
     downloader.run().await?;

@@ -1,11 +1,13 @@
 use crate::auth::Auth;
 use crate::errors::ReddSaverError;
-use crate::structures::{UserAbout, UserSaved};
+use crate::structures::{Listing, UserAbout};
 use crate::utils::get_user_agent_string;
 use log::{debug, info};
 use reqwest::header::USER_AGENT;
 use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::fmt;
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
 pub struct User<'a> {
@@ -13,6 +15,21 @@ pub struct User<'a> {
     auth: &'a Auth,
     /// Username of the user who authorized the application
     name: &'a str,
+}
+
+#[derive(Debug)]
+pub enum ListingType {
+    Saved,
+    Upvoted,
+}
+
+impl Display for ListingType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match *self {
+            ListingType::Saved => write!(f, "saved"),
+            ListingType::Upvoted => write!(f, "upvoted"),
+        }
+    }
 }
 
 impl<'a> User<'a> {
@@ -40,23 +57,31 @@ impl<'a> User<'a> {
         Ok(response)
     }
 
-    pub async fn saved(&self) -> Result<Vec<UserSaved>, ReddSaverError> {
+    pub async fn listing(
+        &self,
+        listing_type: &ListingType,
+    ) -> Result<Vec<Listing>, ReddSaverError> {
         let client = reqwest::Client::new();
 
         let mut complete = false;
         let mut processed = 0;
         let mut after: Option<String> = None;
-        let mut saved: Vec<UserSaved> = Vec::new();
+        let mut listing: Vec<Listing> = Vec::new();
         while !complete {
             // during the first call to the API, we would not provide the after query parameter
             // in subsequent calls, we use the value for after from the response of the
             //  previous request and continue doing so till the value of after is null
             let url = if processed == 0 {
-                format!("https://oauth.reddit.com/user/{}/saved", self.name)
+                format!(
+                    "https://oauth.reddit.com/user/{}/{}",
+                    self.name,
+                    listing_type.to_string()
+                )
             } else {
                 format!(
-                    "https://oauth.reddit.com/user/{}/saved?after={}",
+                    "https://oauth.reddit.com/user/{}/{}?after={}",
                     self.name,
+                    listing_type.to_string(),
                     after.as_ref().unwrap()
                 )
             };
@@ -69,7 +94,7 @@ impl<'a> User<'a> {
                 .query(&[("limit", 100)])
                 .send()
                 .await?
-                .json::<UserSaved>()
+                .json::<Listing>()
                 .await?;
 
             // total number of items processed by the method
@@ -81,7 +106,7 @@ impl<'a> User<'a> {
             // if there is a response, continue collecting them into a vector
             if response.borrow().data.after.as_ref().is_none() {
                 info!("Data gathering complete. Yay.");
-                saved.push(response);
+                listing.push(response);
                 complete = true;
             } else {
                 debug!(
@@ -89,20 +114,29 @@ impl<'a> User<'a> {
                     response.borrow().data.after.as_ref().unwrap()
                 );
                 after = response.borrow().data.after.clone();
-                saved.push(response);
+                listing.push(response);
             }
         }
 
-        Ok(saved)
+        Ok(listing)
     }
 
-    pub async fn unsave(&self, name: &str) -> Result<(), ReddSaverError> {
-        let url = format!("https://oauth.reddit.com/api/unsave");
+    pub async fn undo(&self, name: &str, listing_type: &ListingType) -> Result<(), ReddSaverError> {
         let client = reqwest::Client::new();
+        let url: String;
         let mut map = HashMap::new();
         map.insert("id", name);
 
-        // convenience method to unsave reddit posts
+        match listing_type {
+            ListingType::Upvoted => {
+                url = format!("https://oauth.reddit.com/api/vote");
+                map.insert("dir", "0");
+            }
+            ListingType::Saved => {
+                url = format!("https://oauth.reddit.com/api/unsave");
+            }
+        }
+
         let response = client
             .post(&url)
             .bearer_auth(&self.auth.access_token)
@@ -111,7 +145,7 @@ impl<'a> User<'a> {
             .send()
             .await?;
 
-        debug!("Unsave response: {:#?}", response);
+        debug!("Response: {:#?}", response);
 
         Ok(())
     }
