@@ -17,6 +17,15 @@ You can download release binaries [here](https://github.com/manojkarthick/reddsa
 
 ### Alternative methods
 
+#### Using MacPorts
+
+If you are a macports user on macOS, you can install reddsaver using `port`:
+
+```
+sudo port selfudpate
+sudo port install reddsaver
+```
+
 #### Using Homebrew
 
 If you are a homebrew user on macOS, you can install using `brew tap`:
