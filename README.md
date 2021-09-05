@@ -11,6 +11,11 @@
 
 ## Installation
 
+### Prerequisites 
+
+To download videos hosted by Reddit, you need to have ffmpeg installed.
+Follow this [link](https://www.ffmpeg.org/download.html) for installation instructions.
+
 ### Recommended method
 
 You can download release binaries [here](https://github.com/manojkarthick/reddsaver/releases)
@@ -140,7 +145,7 @@ View it in action here:
 Optionally override the values for the directory to save and the env file to read from:
 
 ```shell script
-ReddSaver 0.3.2
+ReddSaver 0.4.0
 Manoj Karthick Selva Kumar
 Simple CLI tool to download saved media from Reddit
 

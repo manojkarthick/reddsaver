@@ -1,0 +1,17 @@
+edition = "2018"
+# The "Default" setting has a heuristic which splits lines too aggresively.
+use_small_heuristics = "Max"
+# Prevent carriage returns
+newline_style = "Unix"
+# Reorder imports
+reorder_imports = true
+# Where to put binary operators in the line
+binop_separator = "Front"
+# Wrap comments into next line
+wrap_comments = true
+# Format string literals where necessary
+format_strings = true
+# Item layout inside a imports block
+imports_layout = "HorizontalVertical"
+# Indent on expressions or items.
+indent_style = "Block"

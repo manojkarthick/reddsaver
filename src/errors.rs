@@ -1,3 +1,5 @@
+use mime::FromStrError;
+use reqwest::header::ToStrError;
 use thiserror::Error;
 
 #[allow(dead_code)]
@@ -25,4 +27,8 @@ pub enum ReddSaverError {
     IoError(#[from] std::io::Error),
     #[error("Unable to parse URL")]
     UrlError(#[from] url::ParseError),
+    #[error("Could not convert to string")]
+    ToStringConversionError(#[from] ToStrError),
+    #[error("Could not convert from string")]
+    FromStringConversionError(#[from] FromStrError),
 }

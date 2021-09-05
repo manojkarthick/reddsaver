@@ -1,6 +1,6 @@
 [package]
 name = "reddsaver"
-version = "0.3.3"
+version = "0.4.0"
 authors = ["Manoj Karthick Selva Kumar <manojkarthick@ymail.com>"]
 description = "CLI tool to download saved media from Reddit"
 edition = "2018"
@@ -27,3 +27,6 @@ rand = "0.7.3"
 random-names = "0.1.3"
 clap = "2.33.3"
 url = "2.2.0"
+tempfile = "3.2.0"
+which = "4.2.2"
+mime = "0.3.16"

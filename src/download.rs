@@ -2,20 +2,22 @@ use std::borrow::Borrow;
 use std::fs::File;
 use std::ops::Add;
 use std::path::Path;
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::{fs, io};
 
 use futures::stream::FuturesUnordered;
 use futures::TryStreamExt;
 use log::{debug, error, info, warn};
+use reqwest::StatusCode;
+use tempfile::tempdir;
 use url::{Position, Url};
 
 use crate::errors::ReddSaverError;
 use crate::structures::{GfyData, PostData};
 use crate::structures::{Listing, Summary};
 use crate::user::{ListingType, User};
-use crate::utils::check_path_present;
-use reqwest::StatusCode;
+use crate::utils::{check_path_present, check_url_is_mp4};
 
 static JPG_EXTENSION: &str = "jpg";
 static PNG_EXTENSION: &str = "png";
@@ -55,6 +57,28 @@ enum MediaStatus {
     Skipped,
 }
 
+/// Media Types Supported
+#[derive(Debug, PartialEq)]
+enum MediaType {
+    RedditImage,
+    RedditGif,
+    RedditVideoWithAudio,
+    RedditVideoWithoutAudio,
+    GfycatGif,
+    GiphyGif,
+    ImgurImage,
+    ImgurGif,
+}
+
+/// Information about supported media for downloading
+struct SupportedMedia {
+    /// The components for the media. This is a vector of size one for
+    /// all media types except Reddit videos and Reddit Galleries.
+    /// For reddit videos, audio and video are provided separately.
+    components: Vec<String>,
+    media_type: MediaType,
+}
+
 #[derive(Debug)]
 pub struct Downloader<'a> {
     user: &'a User<'a>,
@@ -65,6 +89,7 @@ pub struct Downloader<'a> {
     should_download: bool,
     use_human_readable: bool,
     undo: bool,
+    ffmpeg_available: bool,
 }
 
 impl<'a> Downloader<'a> {
@@ -77,6 +102,7 @@ impl<'a> Downloader<'a> {
         should_download: bool,
         use_human_readable: bool,
         undo: bool,
+        ffmpeg_available: bool,
     ) -> Downloader<'a> {
         Downloader {
             user,
@@ -87,33 +113,23 @@ impl<'a> Downloader<'a> {
             should_download,
             use_human_readable,
             undo,
+            ffmpeg_available,
         }
     }
 
     pub async fn run(self) -> Result<(), ReddSaverError> {
-        let mut full_summary = Summary {
-            media_downloaded: 0,
-            media_skipped: 0,
-            media_supported: 0,
-        };
+        let mut full_summary =
+            Summary { media_downloaded: 0, media_skipped: 0, media_supported: 0 };
 
         for collection in self.listing {
-            full_summary = full_summary.add(
-                self.download_collection(collection, self.listing_type)
-                    .await?,
-            );
+            full_summary =
+                full_summary.add(self.download_collection(collection, self.listing_type).await?);
         }
 
         info!("#####################################");
         info!("Download Summary:");
-        info!(
-            "Number of supported media: {}",
-            full_summary.media_supported
-        );
-        info!(
-            "Number of media downloaded: {}",
-            full_summary.media_downloaded
-        );
+        info!("Number of supported media: {}", full_summary.media_supported);
+        info!("Number of media downloaded: {}", full_summary.media_downloaded);
         info!("Number of media skipped: {}", full_summary.media_skipped);
         info!("#####################################");
         info!("FIN.");
@@ -166,36 +182,135 @@ impl<'a> Downloader<'a> {
                     if is_valid {
                         debug!("Subreddit VALID: {} present in {:#?}", subreddit, subreddit);
 
-                        let media = get_media(item.data.borrow()).await?;
-                        // every entry in this vector is valid media
-                        summary_arc.lock().unwrap().media_supported += media.len() as i32;
+                        let supported_media_items = get_media(item.data.borrow()).await?;
 
-                        for (index, url) in media.iter().enumerate() {
-                            let extension =
-                                String::from(url.split('.').last().unwrap_or("unknown"));
-                            let file_name = self.generate_file_name(
-                                &url,
-                                &subreddit,
-                                &extension,
-                                &post_name,
-                                &post_title,
-                                &index,
-                            );
+                        for supported_media in supported_media_items {
+                            let media_urls = &supported_media.components;
+                            let media_type = supported_media.media_type;
+                            let mut media_files = Vec::new();
 
-                            if self.should_download {
-                                let status = save_or_skip(url, &file_name);
-                                // update the summary statistics based on the status
-                                match status.await? {
-                                    MediaStatus::Downloaded => {
-                                        summary_arc.lock().unwrap().media_downloaded += 1;
+                            // the number of components in the supported media is the number available for download
+                            summary_arc.lock().unwrap().media_supported += supported_media.components.len() as i32;
+
+                            let mut local_skipped = 0;
+                            for (index, url) in media_urls.iter().enumerate() {
+                                let mut item_index = format!("{}", index);
+                                let mut extension =
+                                    String::from(url.split('.').last().unwrap_or("unknown")).replace("/", "_");
+
+                                // if the media is a reddit video, they have separate audio and video components.
+                                // to differentiate this from albums, which use the regular _0, _1, etc indices,
+                                // we use _component_0, component_1 indices to explicitly inform that these are
+                                // components rather than individual media.
+                                if media_type == MediaType::RedditVideoWithAudio {
+                                    item_index = format!("component_{}", index);
+                                };
+                                // some reddit videos don't have the mp4 extension, eg. DASH_<A>_<B>
+                                // explicitly adding an mp4 extension to make it easy to recognize in the finder
+                                if (media_type == MediaType::RedditVideoWithoutAudio
+                                    || media_type == MediaType::RedditVideoWithAudio)
+                                    && !extension.ends_with(".mp4") {
+                                    extension = format!("{}.{}", extension, ".mp4");
+                                }
+                                let file_name = self.generate_file_name(
+                                    &url,
+                                    &subreddit,
+                                    &extension,
+                                    &post_name,
+                                    &post_title,
+                                    &item_index,
+                                );
+
+                                if self.should_download {
+                                    let status = save_or_skip(url, &file_name);
+                                    // update the summary statistics based on the status
+                                    match status.await? {
+                                        MediaStatus::Downloaded => {
+                                            summary_arc.lock().unwrap().media_downloaded += 1;
+                                        }
+                                        MediaStatus::Skipped => {
+                                            local_skipped += 1;
+                                            summary_arc.lock().unwrap().media_skipped += 1;
+                                        }
                                     }
-                                    MediaStatus::Skipped => {
-                                        summary_arc.lock().unwrap().media_skipped += 1
+                                } else {
+                                    info!("Media available at URL: {}", &url);
+                                    summary_arc.lock().unwrap().media_skipped += 1;
+                                }
+
+                                // push all the available media files into a vector
+                                // this is needed in the next step to combine the components using ffmpeg
+                                media_files.push(file_name);
+                            }
+
+                            debug!("Media type: {:#?}", media_type);
+                            debug!("Media files: {:?}", media_files.len());
+                            debug!("Locally skipped items: {:?}", local_skipped);
+
+                            if (media_type == MediaType::RedditVideoWithAudio)
+                                && (media_files.len() == 2)
+                                && (local_skipped < 2) {
+                                if self.ffmpeg_available {
+                                    debug!("Assembling components together");
+                                    let first_url = media_urls.first().unwrap();
+                                    let extension =
+                                        String::from(first_url.split('.').last().unwrap_or("unknown"));
+                                    // this generates the name of the media without the component indices
+                                    // this file name is used for saving the ffmpeg combined file
+                                    let combined_file_name = self.generate_file_name(
+                                        first_url,
+                                        &subreddit,
+                                        &extension,
+                                        &post_name,
+                                        &post_title,
+                                        "0",
+                                    );
+
+                                    let temporary_dir = tempdir()?;
+                                    let temporary_file_name = temporary_dir.path().join("combined.mp4");
+
+                                    if self.should_download {
+                                        // if the media is a reddit video and it has two components, then we
+                                        // need to assemble them into one file using ffmpeg.
+                                        let mut command = Command::new("ffmpeg");
+                                        for media_file in &media_files {
+                                            command.arg("-i").arg(media_file);
+                                        }
+                                        command.arg("-c").arg("copy")
+                                            .arg("-map").arg("1:a")
+                                            .arg("-map").arg("0:v")
+                                            .arg(&temporary_file_name);
+
+                                        debug!("Executing command: {:#?}", command);
+                                        let output = command.output()?;
+
+                                        // check the status code of the ffmpeg command. if the command is unsuccessful,
+                                        // display the error and skip combining the media.
+                                        if output.status.success() {
+                                            debug!("Successfully combined into temporary file: {:?}", temporary_file_name);
+                                            debug!("Renaming file: {} -> {}", temporary_file_name.display(), combined_file_name);
+                                            fs::rename(&temporary_file_name, &combined_file_name)?;
+                                        } else {
+                                            // if we encountered an error, we will write logs from ffmpeg into a new log file
+                                            let log_file_name = self.generate_file_name(
+                                                first_url,
+                                                &subreddit,
+                                                "log",
+                                                &post_name,
+                                                &post_title,
+                                                "0",
+                                            );
+                                            let err = String::from_utf8(output.stderr).unwrap();
+                                            warn!("Could not combine video {} and audio {}. Saving log to: {}", 
+                                                media_urls.first().unwrap(), media_urls.last().unwrap(), log_file_name);
+                                            fs::write(log_file_name, err)?;
+                                        }
                                     }
+                                } else {
+                                    warn!("Skipping combining the individual components since ffmpeg is not installed");
                                 }
                             } else {
-                                info!("Media available at URL: {}", &url);
-                                summary_arc.lock().unwrap().media_skipped += 1;
+                                debug!("Skipping combining reddit video.");
                             }
                         }
                     } else {
@@ -219,14 +334,8 @@ impl<'a> Downloader<'a> {
         let local_summary = *summary.lock().unwrap();
 
         debug!("Collection statistics: ");
-        debug!(
-            "Number of supported media: {}",
-            local_summary.media_supported
-        );
-        debug!(
-            "Number of media downloaded: {}",
-            local_summary.media_downloaded
-        );
+        debug!("Number of supported media: {}", local_summary.media_supported);
+        debug!("Number of media downloaded: {}", local_summary.media_downloaded);
         debug!("Number of media skipped: {}", local_summary.media_skipped);
 
         Ok(local_summary)
@@ -240,7 +349,7 @@ impl<'a> Downloader<'a> {
         extension: &str,
         name: &str,
         title: &str,
-        index: &usize,
+        index: &str,
     ) -> String {
         return if !self.use_human_readable {
             // create a hash for the media using the URL the media is located at
@@ -263,7 +372,13 @@ impl<'a> Downloader<'a> {
                 .take(200)
                 .enumerate()
                 .map(|(_, c)| {
-                    if c.is_whitespace() || c == '/' || c == '\\' {
+                    if c.is_whitespace()
+                        || c == '.'
+                        || c == '/'
+                        || c == '\\'
+                        || c == ':'
+                        || c == '='
+                    {
                         '_'
                     } else {
                         c
@@ -272,12 +387,9 @@ impl<'a> Downloader<'a> {
                 .collect();
             // create a canonical human readable file name using the post's title
             // note that the name of the post is something of the form t3_<randomstring>
-            let canonical_name: String = if *index == 0 {
-                String::from(name)
-            } else {
-                format!("{}_{}", name, index)
-            };
-
+            let canonical_name: String =
+                if index == "0" { String::from(name) } else { format!("{}_{}", name, index) }
+                    .replace(".", "_");
             format!(
                 "{}/{}/{}_{}.{}",
                 self.data_directory, subreddit, canonical_title, canonical_name, extension
@@ -289,7 +401,7 @@ impl<'a> Downloader<'a> {
 /// Helper function that downloads and saves a single media from Reddit or Imgur
 async fn save_or_skip(url: &str, file_name: &str) -> Result<MediaStatus, ReddSaverError> {
     if check_path_present(&file_name) {
-        debug!("Image from url {} already downloaded. Skipping...", url);
+        debug!("Media from url {} already downloaded. Skipping...", url);
         Ok(MediaStatus::Skipped)
     } else {
         let save_status = download_media(&file_name, &url).await?;
@@ -333,10 +445,7 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
                     }
                 }
                 Err(_) => {
-                    warn!(
-                        "Could not create a file with the name: {}. Skipping",
-                        file_name
-                    );
+                    warn!("Could not create a file with the name: {}. Skipping", file_name);
                 }
             }
         }
@@ -346,12 +455,9 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
 }
 
 /// Convert Gfycat/Redgifs GIFs into mp4 URLs for download
-async fn gfy_to_mp4(url: &str) -> Result<Option<String>, ReddSaverError> {
-    let api_prefix = if url.contains(GFYCAT_DOMAIN) {
-        GFYCAT_API_PREFIX
-    } else {
-        REDGIFS_API_PREFIX
-    };
+async fn gfy_to_mp4(url: &str) -> Result<Option<SupportedMedia>, ReddSaverError> {
+    let api_prefix =
+        if url.contains(GFYCAT_DOMAIN) { GFYCAT_API_PREFIX } else { REDGIFS_API_PREFIX };
     let maybe_media_id = url.split("/").last();
 
     if let Some(media_id) = maybe_media_id {
@@ -366,7 +472,11 @@ async fn gfy_to_mp4(url: &str) -> Result<Option<String>, ReddSaverError> {
         // response was HTTP 200
         if response.status() == StatusCode::OK {
             let data = response.json::<GfyData>().await?;
-            Ok(Some(data.gfy_item.mp4_url))
+            let supported_media = SupportedMedia {
+                components: vec![data.gfy_item.mp4_url],
+                media_type: MediaType::GfycatGif,
+            };
+            Ok(Some(supported_media))
         } else {
             Ok(None)
         }
@@ -375,10 +485,69 @@ async fn gfy_to_mp4(url: &str) -> Result<Option<String>, ReddSaverError> {
     }
 }
 
+// Get reddit video information and optionally the audio track if it exists
+async fn get_reddit_video(url: &str) -> Result<Option<SupportedMedia>, ReddSaverError> {
+    let maybe_dash_video = url.split("/").last();
+    if let Some(dash_video) = maybe_dash_video {
+        let present = dash_video.contains("DASH");
+        // todo: find exhaustive collection of these, or figure out if they are (x, x*2) pairs
+        let dash_video_only = vec!["DASH_1_2_M", "DASH_2_4_M", "DASH_4_8_M"];
+        if present {
+            return if dash_video_only.contains(&dash_video) {
+                let supported_media = SupportedMedia {
+                    components: vec![String::from(url)],
+                    media_type: MediaType::RedditVideoWithoutAudio,
+                };
+                Ok(Some(supported_media))
+            } else {
+                let all = url.split("/").collect::<Vec<&str>>();
+                let mut result = all.split_last().unwrap().1.to_vec();
+                let dash_audio = "DASH_audio.mp4";
+                result.push(dash_audio);
+
+                // dynamically generate audio URLs for reddit videos by changing the video URL
+                let audio_url = result.join("/");
+                // Check the mime type to see the generated URL contains an audio file
+                // This can be done by checking the content type header for the given URL
+                // Reddit API response does not seem to expose any easy way to figure this out
+                if let Some(audio_present) = check_url_is_mp4(&audio_url).await? {
+                    if audio_present {
+                        debug!("Found audio at URL {} for video {}", audio_url, dash_video);
+                        let supported_media = SupportedMedia {
+                            components: vec![String::from(url), audio_url],
+                            media_type: MediaType::RedditVideoWithAudio,
+                        };
+                        Ok(Some(supported_media))
+                    } else {
+                        debug!(
+                            "URL {} doesn't seem to have any associated audio at {}",
+                            dash_video, audio_url
+                        );
+                        let supported_media = SupportedMedia {
+                            components: vec![String::from(url)],
+                            media_type: MediaType::RedditVideoWithoutAudio,
+                        };
+                        Ok(Some(supported_media))
+                    }
+                } else {
+                    // todo: collapse this else block by removing the bool check
+                    let supported_media = SupportedMedia {
+                        components: vec![String::from(url)],
+                        media_type: MediaType::RedditVideoWithoutAudio,
+                    };
+                    Ok(Some(supported_media))
+                }
+            };
+        }
+    }
+
+    Ok(None)
+}
+
 /// Check if a particular URL contains supported media.
-async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
+async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverError> {
     let original = data.url.as_ref().unwrap();
-    let mut media: Vec<String> = Vec::new();
+    let mut media: Vec<SupportedMedia> = Vec::new();
 
     if let Ok(u) = Url::parse(original) {
         let mut parsed = u.clone();
@@ -395,11 +564,20 @@ async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
         if url.contains(REDDIT_IMAGE_SUBDOMAIN) {
             // if the URL uses the reddit image subdomain and if the extension is
             // jpg, png or gif, then we can use the URL as is.
-            if url.ends_with(JPG_EXTENSION)
-                || url.ends_with(PNG_EXTENSION)
-                || url.ends_with(GIF_EXTENSION)
-            {
+            if url.ends_with(JPG_EXTENSION) || url.ends_with(PNG_EXTENSION) {
                 let translated = String::from(url);
+                let supported_media = SupportedMedia {
+                    components: vec![translated],
+                    media_type: MediaType::RedditImage,
+                };
+                media.push(supported_media);
+            }
+            if url.ends_with(GIF_EXTENSION) {
+                let translated = String::from(url);
+                let translated = SupportedMedia {
+                    components: vec![translated],
+                    media_type: MediaType::RedditGif,
+                };
                 media.push(translated);
             }
         }
@@ -409,17 +587,21 @@ async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
             // if the URL uses the reddit video subdomain and if the extension is
             // mp4, then we can use the URL as is.
             if url.ends_with(MP4_EXTENSION) {
-                let translated = String::from(url);
-                media.push(translated);
+                let video_url = String::from(url);
+                if let Some(supported_media) = get_reddit_video(&video_url).await? {
+                    media.push(supported_media);
+                }
             } else {
                 // if the URL uses the reddit video subdomain, but the link does not
                 // point directly to the mp4, then use the fallback URL to get the
                 // appropriate link. The video quality might range from 96p to 720p
                 if let Some(m) = &data.media {
                     if let Some(v) = &m.reddit_video {
-                        let translated =
+                        let fallback_url =
                             String::from(&v.fallback_url).replace("?source=fallback", "");
-                        media.push(translated);
+                        if let Some(supported_media) = get_reddit_video(&fallback_url).await? {
+                            media.push(supported_media);
+                        }
                     }
                 }
             }
@@ -428,14 +610,19 @@ async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
         // reddit image galleries
         if url.contains(REDDIT_DOMAIN) && url.contains(REDDIT_GALLERY_PATH) {
             if let Some(gallery) = gallery_info {
+                // collect all the URLs for the images in the album
+                let mut image_urls = Vec::new();
                 for item in gallery.items.iter() {
                     // extract the media ID from each gallery item and reconstruct the image URL
-                    let translated = format!(
+                    let image_url = format!(
                         "https://{}/{}.{}",
                         REDDIT_IMAGE_SUBDOMAIN, item.media_id, JPG_EXTENSION
                     );
-                    media.push(translated);
+                    image_urls.push(image_url);
                 }
+                let supported_media =
+                    SupportedMedia { components: image_urls, media_type: MediaType::RedditImage };
+                media.push(supported_media);
             }
         }
 
@@ -443,15 +630,18 @@ async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
         if url.contains(GFYCAT_DOMAIN) || url.contains(REDGIFS_DOMAIN) {
             // if the Gfycat/Redgifs URL points directly to the mp4, download as is
             if url.ends_with(MP4_EXTENSION) {
-                let translated = String::from(url);
-                media.push(translated);
+                let supported_media = SupportedMedia {
+                    components: vec![String::from(url)],
+                    media_type: MediaType::GfycatGif,
+                };
+                media.push(supported_media);
             } else {
                 // if the provided link is a gfycat post link, use the gfycat API
                 // to get the URL. gfycat likes to use lowercase names in their posts
                 // but the ID for the GIF is Pascal-cased. The case-conversion info
                 // can only be obtained from the API at the moment
-                if let Some(mp4_url) = gfy_to_mp4(url).await? {
-                    media.push(mp4_url);
+                if let Some(supported_media) = gfy_to_mp4(url).await? {
+                    media.push(supported_media);
                 }
             }
         }
@@ -472,17 +662,25 @@ async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
                     || url.ends_with(MP4_EXTENSION)
                     || url.ends_with(GIFV_EXTENSION)
                 {
-                    let translated = String::from(url);
-                    media.push(translated);
+                    let supported_media = SupportedMedia {
+                        components: vec![String::from(url)],
+                        media_type: MediaType::GiphyGif,
+                    };
+                    media.push(supported_media);
                 }
             } else {
                 // if the link points to the giphy post rather than the media link,
                 // use the scheme below to get the actual URL for the gif.
                 let path = &parsed[Position::AfterHost..Position::AfterPath];
                 let media_id = path.split("-").last().unwrap();
-                let translated =
-                    format!("https://{}/media/{}.gif", GIPHY_MEDIA_SUBDOMAIN, media_id);
-                media.push(translated);
+                let supported_media = SupportedMedia {
+                    components: vec![format!(
+                        "https://{}/media/{}.gif",
+                        GIPHY_MEDIA_SUBDOMAIN, media_id
+                    )],
+                    media_type: MediaType::GiphyGif,
+                };
+                media.push(supported_media);
             }
         }
 
@@ -492,14 +690,20 @@ async fn get_media(data: &PostData) -> Result<Vec<String>, ReddSaverError> {
         if url.contains(IMGUR_DOMAIN) {
             if url.contains(IMGUR_SUBDOMAIN) && url.ends_with(GIFV_EXTENSION) {
                 // if the extension is gifv, then replace gifv->mp4 to get the video URL
-                let translated = url.replace(GIFV_EXTENSION, MP4_EXTENSION);
-                media.push(translated);
+                let supported_media = SupportedMedia {
+                    components: vec![url.replace(GIFV_EXTENSION, MP4_EXTENSION)],
+                    media_type: MediaType::ImgurGif,
+                };
+                media.push(supported_media);
             }
             if url.contains(IMGUR_SUBDOMAIN)
                 && (url.ends_with(PNG_EXTENSION) || url.ends_with(JPG_EXTENSION))
             {
-                let translated = String::from(url);
-                media.push(translated);
+                let supported_media = SupportedMedia {
+                    components: vec![String::from(url)],
+                    media_type: MediaType::ImgurImage,
+                };
+                media.push(supported_media);
             }
         }
     }
