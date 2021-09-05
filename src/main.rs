@@ -2,7 +2,7 @@ use std::env;
 
 use clap::{crate_version, App, Arg};
 use env_logger::Env;
-use log::{debug, info};
+use log::{debug, info, warn};
 
 use auth::Client;
 
@@ -94,6 +94,8 @@ async fn main() -> Result<(), ReddSaverError> {
     let data_directory = String::from(matches.value_of("data_directory").unwrap());
     // generate the URLs to download from without actually downloading the media
     let should_download = !matches.is_present("dry_run");
+    // check if ffmpeg is present for combining video streams
+    let ffmpeg_available = application_present(String::from("ffmpeg"));
     // generate human readable file names instead of MD5 Hashed file names
     let use_human_readable = matches.is_present("human_readable");
     // restrict downloads to these subreddits
@@ -103,11 +105,7 @@ async fn main() -> Result<(), ReddSaverError> {
         None
     };
     let upvoted = matches.is_present("upvoted");
-    let listing_type = if upvoted {
-        &ListingType::Upvoted
-    } else {
-        &ListingType::Saved
-    };
+    let listing_type = if upvoted { &ListingType::Upvoted } else { &ListingType::Saved };
 
     let undo = matches.is_present("undo");
 
@@ -141,20 +139,22 @@ async fn main() -> Result<(), ReddSaverError> {
         info!("SUBREDDITS = {}", print_subreddits(&subreddits));
         info!("UPVOTED = {}", upvoted);
         info!("UNDO = {}", undo);
+        info!("FFMPEG AVAILABLE = {}", ffmpeg_available);
 
         return Ok(());
     }
 
+    if !ffmpeg_available {
+        warn!(
+            "No ffmpeg Installation available. \
+            Videos hosted by Reddit use separate video and audio streams. \
+            Ffmpeg needs be installed to combine the audio and video into a single mp4."
+        );
+    }
+
     // login to reddit using the credentials provided and get API bearer token
-    let auth = Client::new(
-        &client_id,
-        &client_secret,
-        &username,
-        &password,
-        &user_agent,
-    )
-    .login()
-    .await?;
+    let auth =
+        Client::new(&client_id, &client_secret, &username, &password, &user_agent).login().await?;
     info!("Successfully logged in to Reddit as {}", username);
     debug!("Authentication details: {:#?}", auth);
 
@@ -182,6 +182,7 @@ async fn main() -> Result<(), ReddSaverError> {
         should_download,
         use_human_readable,
         undo,
+        ffmpeg_available,
     );
 
     downloader.run().await?;

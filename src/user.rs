@@ -72,11 +72,7 @@ impl<'a> User<'a> {
             // in subsequent calls, we use the value for after from the response of the
             //  previous request and continue doing so till the value of after is null
             let url = if processed == 0 {
-                format!(
-                    "https://oauth.reddit.com/user/{}/{}",
-                    self.name,
-                    listing_type.to_string()
-                )
+                format!("https://oauth.reddit.com/user/{}/{}", self.name, listing_type.to_string())
             } else {
                 format!(
                     "https://oauth.reddit.com/user/{}/{}?after={}",
@@ -109,10 +105,7 @@ impl<'a> User<'a> {
                 listing.push(response);
                 complete = true;
             } else {
-                debug!(
-                    "Processing till: {}",
-                    response.borrow().data.after.as_ref().unwrap()
-                );
+                debug!("Processing till: {}", response.borrow().data.after.as_ref().unwrap());
                 after = response.borrow().data.after.clone();
                 listing.push(response);
             }
