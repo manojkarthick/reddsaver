@@ -6,3 +6,5 @@ data/
 reddsaver/
 *.iml
 .envrc
+mock/
+test-data/
