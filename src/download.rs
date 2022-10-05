@@ -427,6 +427,12 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
     let maybe_response = reqwest::get(url).await;
     if let Ok(response) = maybe_response {
         debug!("URL Response: {:#?}", response);
+
+        if response.status() != 200 {
+            debug!("Invalid response code: {}, skipping {}", response.status(), url);
+            return Ok(false);
+        }
+
         let maybe_data = response.bytes().await;
         if let Ok(data) = maybe_data {
             debug!("Bytes length of the data: {:#?}", data.len());
