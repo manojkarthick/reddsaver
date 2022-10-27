@@ -158,7 +158,6 @@ async fn main() -> Result<(), ReddSaverError> {
         .build()?;
 
 
-    // jar.add_cookie_str(cookie, &url);
     let client = Client::new(&client_id, &client_secret, &username, &password, &session);
     // login to reddit using the credentials provided and get API bearer token
     let auth =
