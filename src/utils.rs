@@ -11,7 +11,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Generate user agent string of the form <name>:<version>.
 /// If no arguments passed generate random name and number
 pub fn get_user_agent_string(username: &str) -> String {
-    format!("reddsaver:{} (by u/{}", VERSION, username)
+    format!("reddsaver:{} (by u/{})", VERSION, username)
 }
 
 /// Check if a particular path is present on the filesystem
