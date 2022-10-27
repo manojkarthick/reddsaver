@@ -1,9 +1,7 @@
 use crate::auth::Auth;
 use crate::errors::ReddSaverError;
 use crate::structures::{Listing, UserAbout};
-use crate::utils::get_user_agent_string;
 use log::{debug, info};
-use reqwest::header::USER_AGENT;
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt;
@@ -15,6 +13,8 @@ pub struct User<'a> {
     auth: &'a Auth,
     /// Username of the user who authorized the application
     name: &'a str,
+    /// Reqwest client
+    session: &'a reqwest::Client,
 }
 
 #[derive(Debug)]
@@ -33,20 +33,18 @@ impl Display for ListingType {
 }
 
 impl<'a> User<'a> {
-    pub fn new(auth: &'a Auth, name: &'a str) -> Self {
-        User { auth, name }
+    pub fn new(auth: &'a Auth, name: &'a str, session: &'a reqwest::Client) -> Self {
+        User { auth, name, session }
     }
 
     pub async fn about(&self) -> Result<UserAbout, ReddSaverError> {
         // all API requests that use a bearer token should be made to oauth.reddit.com instead
         let url = format!("https://oauth.reddit.com/user/{}/about", self.name);
-        let client = reqwest::Client::new();
 
-        let response = client
+        let response = self.session
             .get(&url)
             .bearer_auth(&self.auth.access_token)
             // reddit will forbid you from accessing the API if the provided user agent is not unique
-            .header(USER_AGENT, get_user_agent_string(None, None))
             .send()
             .await?
             .json::<UserAbout>()
@@ -61,7 +59,6 @@ impl<'a> User<'a> {
         &self,
         listing_type: &ListingType,
     ) -> Result<Vec<Listing>, ReddSaverError> {
-        let client = reqwest::Client::new();
 
         let mut complete = false;
         let mut processed = 0;
@@ -82,10 +79,9 @@ impl<'a> User<'a> {
                 )
             };
 
-            let response = client
+            let response = self.session
                 .get(&url)
                 .bearer_auth(&self.auth.access_token)
-                .header(USER_AGENT, get_user_agent_string(None, None))
                 // the maximum number of items returned by the API in a single request is 100
                 .query(&[("limit", 100)])
                 .send()
@@ -115,7 +111,6 @@ impl<'a> User<'a> {
     }
 
     pub async fn undo(&self, name: &str, listing_type: &ListingType) -> Result<(), ReddSaverError> {
-        let client = reqwest::Client::new();
         let url: String;
         let mut map = HashMap::new();
         map.insert("id", name);
@@ -130,10 +125,9 @@ impl<'a> User<'a> {
             }
         }
 
-        let response = client
+        let response = self.session
             .post(&url)
             .bearer_auth(&self.auth.access_token)
-            .header(USER_AGENT, get_user_agent_string(None, None))
             .form(&map)
             .send()
             .await?;

@@ -120,7 +120,7 @@ async fn main() -> Result<(), ReddSaverError> {
     let client_secret = env::var("CLIENT_SECRET")?;
     let username = env::var("USERNAME")?;
     let password = env::var("PASSWORD")?;
-    let user_agent = get_user_agent_string(None, None);
+    let user_agent = get_user_agent_string(&username);
 
     if !check_path_present(&data_directory) {
         return Err(DataDirNotFound);
@@ -151,15 +151,23 @@ async fn main() -> Result<(), ReddSaverError> {
             Ffmpeg needs be installed to combine the audio and video into a single mp4."
         );
     }
+;
+    let session = reqwest::Client::builder()
+        .cookie_store(true)
+        .user_agent(get_user_agent_string(&username))
+        .build()?;
 
+
+    let client = Client::new(&client_id, &client_secret, &username, &password, &session);
     // login to reddit using the credentials provided and get API bearer token
     let auth =
-        Client::new(&client_id, &client_secret, &username, &password, &user_agent).login().await?;
+        client.login().await?;
+  
     info!("Successfully logged in to Reddit as {}", username);
     debug!("Authentication details: {:#?}", auth);
 
     // get information about the user to display
-    let user = User::new(&auth, &username);
+    let user = User::new(&auth, &username, &session);
 
     let user_info = user.about().await?;
     info!("The user details are: ");
@@ -183,6 +191,7 @@ async fn main() -> Result<(), ReddSaverError> {
         use_human_readable,
         undo,
         ffmpeg_available,
+        &session,
     );
 
     downloader.run().await?;

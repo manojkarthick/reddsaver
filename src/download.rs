@@ -90,6 +90,7 @@ pub struct Downloader<'a> {
     use_human_readable: bool,
     undo: bool,
     ffmpeg_available: bool,
+    session: &'a reqwest::Client,
 }
 
 impl<'a> Downloader<'a> {
@@ -103,6 +104,8 @@ impl<'a> Downloader<'a> {
         use_human_readable: bool,
         undo: bool,
         ffmpeg_available: bool,
+        session: &'a reqwest::Client,
+
     ) -> Downloader<'a> {
         Downloader {
             user,
@@ -114,6 +117,7 @@ impl<'a> Downloader<'a> {
             use_human_readable,
             undo,
             ffmpeg_available,
+            session,
         }
     }
 
@@ -182,7 +186,7 @@ impl<'a> Downloader<'a> {
                     if is_valid {
                         debug!("Subreddit VALID: {} present in {:#?}", subreddit, subreddit);
 
-                        let supported_media_items = get_media(item.data.borrow()).await?;
+                        let supported_media_items = self.get_media(item.data.borrow()).await?;
 
                         for supported_media in supported_media_items {
                             let media_urls = &supported_media.components;
@@ -222,7 +226,7 @@ impl<'a> Downloader<'a> {
                                 );
 
                                 if self.should_download {
-                                    let status = save_or_skip(url, &file_name);
+                                    let status = self.save_or_skip(url, &file_name);
                                     // update the summary statistics based on the status
                                     match status.await? {
                                         MediaStatus::Downloaded => {
@@ -396,317 +400,322 @@ impl<'a> Downloader<'a> {
             )
         };
     }
-}
+
 
 /// Helper function that downloads and saves a single media from Reddit or Imgur
-async fn save_or_skip(url: &str, file_name: &str) -> Result<MediaStatus, ReddSaverError> {
-    if check_path_present(&file_name) {
-        debug!("Media from url {} already downloaded. Skipping...", url);
-        Ok(MediaStatus::Skipped)
-    } else {
-        let save_status = download_media(&file_name, &url).await?;
-        if save_status {
-            Ok(MediaStatus::Downloaded)
-        } else {
+    async fn save_or_skip(&self, url: &str, file_name: &str) -> Result<MediaStatus, ReddSaverError> {
+        if check_path_present(&file_name) {
+            debug!("Media from url {} already downloaded. Skipping...", url);
             Ok(MediaStatus::Skipped)
-        }
-    }
-}
-
-/// Download media from the given url and save to data directory. Also create data directory if not present already
-async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverError> {
-    // create directory if it does not already exist
-    // the directory is created relative to the current working directory
-    let mut status = false;
-    let directory = Path::new(file_name).parent().unwrap();
-    match fs::create_dir_all(directory) {
-        Ok(_) => (),
-        Err(_e) => return Err(ReddSaverError::CouldNotCreateDirectory),
-    }
-
-    let maybe_response = reqwest::get(url).await;
-    if let Ok(response) = maybe_response {
-        debug!("URL Response: {:#?}", response);
-        let maybe_data = response.bytes().await;
-        if let Ok(data) = maybe_data {
-            debug!("Bytes length of the data: {:#?}", data.len());
-            let maybe_output = File::create(&file_name);
-            match maybe_output {
-                Ok(mut output) => {
-                    debug!("Created a file: {}", file_name);
-                    match io::copy(&mut data.as_ref(), &mut output) {
-                        Ok(_) => {
-                            info!("Successfully saved media: {} from url {}", file_name, url);
-                            status = true;
-                        }
-                        Err(_e) => {
-                            error!("Could not save media from url {} to {}", url, file_name);
-                        }
-                    }
-                }
-                Err(_) => {
-                    warn!("Could not create a file with the name: {}. Skipping", file_name);
-                }
+        } else {
+            let save_status = self.download_media(&file_name, &url).await?;
+            if save_status {
+                Ok(MediaStatus::Downloaded)
+            } else {
+                Ok(MediaStatus::Skipped)
             }
         }
     }
 
-    Ok(status)
-}
+/// Download media from the given url and save to data directory. Also create data directory if not present already
+    async fn download_media(&self, file_name: &str, url: &str) -> Result<bool, ReddSaverError> {
+        // create directory if it does not already exist
+        // the directory is created relative to the current working directory
+        let mut status = false;
+        let directory = Path::new(file_name).parent().unwrap();
+        match fs::create_dir_all(directory) {
+            Ok(_) => (),
+            Err(_e) => return Err(ReddSaverError::CouldNotCreateDirectory),
+        }
+        
+        let maybe_response = self.session
+            .get(url)
+            .send()
+            .await;
+        if let Ok(response) = maybe_response {
+            debug!("URL Response: {:#?}", response);
+            let maybe_data = response.bytes().await;
+            if let Ok(data) = maybe_data {
+                debug!("Bytes length of the data: {:#?}", data.len());
+                let maybe_output = File::create(&file_name);
+                match maybe_output {
+                    Ok(mut output) => {
+                        debug!("Created a file: {}", file_name);
+                        match io::copy(&mut data.as_ref(), &mut output) {
+                            Ok(_) => {
+                                info!("Successfully saved media: {} from url {}", file_name, url);
+                                status = true;
+                            }
+                            Err(_e) => {
+                                error!("Could not save media from url {} to {}", url, file_name);
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        warn!("Could not create a file with the name: {}. Skipping", file_name);
+                    }
+                }
+            }
+        }
+
+        Ok(status)
+    }
 
 /// Convert Gfycat/Redgifs GIFs into mp4 URLs for download
-async fn gfy_to_mp4(url: &str) -> Result<Option<SupportedMedia>, ReddSaverError> {
-    let api_prefix =
-        if url.contains(GFYCAT_DOMAIN) { GFYCAT_API_PREFIX } else { REDGIFS_API_PREFIX };
-    let maybe_media_id = url.split("/").last();
+    async fn gfy_to_mp4(&self, url: &str) -> Result<Option<SupportedMedia>, ReddSaverError> {
+        let api_prefix =
+            if url.contains(GFYCAT_DOMAIN) { GFYCAT_API_PREFIX } else { REDGIFS_API_PREFIX };
+        let maybe_media_id = url.split("/").last();
 
-    if let Some(media_id) = maybe_media_id {
-        let api_url = format!("{}/{}", api_prefix, media_id);
-        debug!("GFY API URL: {}", api_url);
-        let client = reqwest::Client::new();
+        if let Some(media_id) = maybe_media_id {
+            let api_url = format!("{}/{}", api_prefix, media_id);
+            debug!("GFY API URL: {}", api_url);
 
-        // talk to gfycat API and get GIF information
-        let response = client.get(&api_url).send().await?;
-        // if the gif is not available anymore, Gfycat might send
-        // a 404 response. Proceed to get the mp4 URL only if the
-        // response was HTTP 200
-        if response.status() == StatusCode::OK {
-            let data = response.json::<GfyData>().await?;
-            let supported_media = SupportedMedia {
-                components: vec![data.gfy_item.mp4_url],
-                media_type: MediaType::GfycatGif,
-            };
-            Ok(Some(supported_media))
-        } else {
-            Ok(None)
-        }
-    } else {
-        Ok(None)
-    }
-}
-
-// Get reddit video information and optionally the audio track if it exists
-async fn get_reddit_video(url: &str) -> Result<Option<SupportedMedia>, ReddSaverError> {
-    let maybe_dash_video = url.split("/").last();
-    if let Some(dash_video) = maybe_dash_video {
-        let present = dash_video.contains("DASH");
-        // todo: find exhaustive collection of these, or figure out if they are (x, x*2) pairs
-        let dash_video_only = vec!["DASH_1_2_M", "DASH_2_4_M", "DASH_4_8_M"];
-        if present {
-            return if dash_video_only.contains(&dash_video) {
+            // talk to gfycat API and get GIF information
+            let response = self.session.get(&api_url)
+                .send()
+                .await?;
+            // if the gif is not available anymore, Gfycat might send
+            // a 404 response. Proceed to get the mp4 URL only if the
+            // response was HTTP 200
+            if response.status() == StatusCode::OK {
+                let data = response.json::<GfyData>().await?;
                 let supported_media = SupportedMedia {
-                    components: vec![String::from(url)],
-                    media_type: MediaType::RedditVideoWithoutAudio,
+                    components: vec![data.gfy_item.mp4_url],
+                    media_type: MediaType::GfycatGif,
                 };
                 Ok(Some(supported_media))
             } else {
-                let all = url.split("/").collect::<Vec<&str>>();
-                let mut result = all.split_last().unwrap().1.to_vec();
-                let dash_audio = "DASH_audio.mp4";
-                result.push(dash_audio);
+                Ok(None)
+            }
+        } else {
+            Ok(None)
+        }
+    }
 
-                // dynamically generate audio URLs for reddit videos by changing the video URL
-                let audio_url = result.join("/");
-                // Check the mime type to see the generated URL contains an audio file
-                // This can be done by checking the content type header for the given URL
-                // Reddit API response does not seem to expose any easy way to figure this out
-                if let Some(audio_present) = check_url_is_mp4(&audio_url).await? {
-                    if audio_present {
-                        debug!("Found audio at URL {} for video {}", audio_url, dash_video);
-                        let supported_media = SupportedMedia {
-                            components: vec![String::from(url), audio_url],
-                            media_type: MediaType::RedditVideoWithAudio,
-                        };
-                        Ok(Some(supported_media))
+// Get reddit video information and optionally the audio track if it exists
+    async fn get_reddit_video(&self, url: &str) -> Result<Option<SupportedMedia>, ReddSaverError> {
+        let maybe_dash_video = url.split("/").last();
+        if let Some(dash_video) = maybe_dash_video {
+            let present = dash_video.contains("DASH");
+            // todo: find exhaustive collection of these, or figure out if they are (x, x*2) pairs
+            let dash_video_only = vec!["DASH_1_2_M", "DASH_2_4_M", "DASH_4_8_M"];
+            if present {
+                return if dash_video_only.contains(&dash_video) {
+                    let supported_media = SupportedMedia {
+                        components: vec![String::from(url)],
+                        media_type: MediaType::RedditVideoWithoutAudio,
+                    };
+                    Ok(Some(supported_media))
+                } else {
+                    let all = url.split("/").collect::<Vec<&str>>();
+                    let mut result = all.split_last().unwrap().1.to_vec();
+                    let dash_audio = "DASH_audio.mp4";
+                    result.push(dash_audio);
+
+                    // dynamically generate audio URLs for reddit videos by changing the video URL
+                    let audio_url = result.join("/");
+                    // Check the mime type to see the generated URL contains an audio file
+                    // This can be done by checking the content type header for the given URL
+                    // Reddit API response does not seem to expose any easy way to figure this out
+                    if let Some(audio_present) = check_url_is_mp4(&audio_url).await? {
+                        if audio_present {
+                            debug!("Found audio at URL {} for video {}", audio_url, dash_video);
+                            let supported_media = SupportedMedia {
+                                components: vec![String::from(url), audio_url],
+                                media_type: MediaType::RedditVideoWithAudio,
+                            };
+                            Ok(Some(supported_media))
+                        } else {
+                            debug!(
+                                "URL {} doesn't seem to have any associated audio at {}",
+                                dash_video, audio_url
+                            );
+                            let supported_media = SupportedMedia {
+                                components: vec![String::from(url)],
+                                media_type: MediaType::RedditVideoWithoutAudio,
+                            };
+                            Ok(Some(supported_media))
+                        }
                     } else {
-                        debug!(
-                            "URL {} doesn't seem to have any associated audio at {}",
-                            dash_video, audio_url
-                        );
+                        // todo: collapse this else block by removing the bool check
                         let supported_media = SupportedMedia {
                             components: vec![String::from(url)],
                             media_type: MediaType::RedditVideoWithoutAudio,
                         };
                         Ok(Some(supported_media))
                     }
-                } else {
-                    // todo: collapse this else block by removing the bool check
-                    let supported_media = SupportedMedia {
-                        components: vec![String::from(url)],
-                        media_type: MediaType::RedditVideoWithoutAudio,
-                    };
-                    Ok(Some(supported_media))
-                }
-            };
+                };
+            }
         }
+
+        Ok(None)
     }
 
-    Ok(None)
-}
+    /// Check if a particular URL contains supported media.
+    async fn get_media(&self, data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverError> {
+        let original = data.url.as_ref().unwrap();
+        let mut media: Vec<SupportedMedia> = Vec::new();
 
-/// Check if a particular URL contains supported media.
-async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverError> {
-    let original = data.url.as_ref().unwrap();
-    let mut media: Vec<SupportedMedia> = Vec::new();
+        if let Ok(u) = Url::parse(original) {
+            let mut parsed = u.clone();
 
-    if let Ok(u) = Url::parse(original) {
-        let mut parsed = u.clone();
+            match parsed.path_segments_mut() {
+                Ok(mut p) => p.pop_if_empty(),
+                Err(_) => return Ok(media),
+            };
 
-        match parsed.path_segments_mut() {
-            Ok(mut p) => p.pop_if_empty(),
-            Err(_) => return Ok(media),
-        };
+            let url = &parsed[..Position::AfterPath];
+            let gallery_info = data.gallery_data.borrow();
 
-        let url = &parsed[..Position::AfterPath];
-        let gallery_info = data.gallery_data.borrow();
-
-        // reddit images and gifs
-        if url.contains(REDDIT_IMAGE_SUBDOMAIN) {
-            // if the URL uses the reddit image subdomain and if the extension is
-            // jpg, png or gif, then we can use the URL as is.
-            if url.ends_with(JPG_EXTENSION) || url.ends_with(PNG_EXTENSION) {
-                let translated = String::from(url);
-                let supported_media = SupportedMedia {
-                    components: vec![translated],
-                    media_type: MediaType::RedditImage,
-                };
-                media.push(supported_media);
-            }
-            if url.ends_with(GIF_EXTENSION) {
-                let translated = String::from(url);
-                let translated = SupportedMedia {
-                    components: vec![translated],
-                    media_type: MediaType::RedditGif,
-                };
-                media.push(translated);
-            }
-        }
-
-        // reddit mp4 videos
-        if url.contains(REDDIT_VIDEO_SUBDOMAIN) {
-            // if the URL uses the reddit video subdomain and if the extension is
-            // mp4, then we can use the URL as is.
-            if url.ends_with(MP4_EXTENSION) {
-                let video_url = String::from(url);
-                if let Some(supported_media) = get_reddit_video(&video_url).await? {
+            // reddit images and gifs
+            if url.contains(REDDIT_IMAGE_SUBDOMAIN) {
+                // if the URL uses the reddit image subdomain and if the extension is
+                // jpg, png or gif, then we can use the URL as is.
+                if url.ends_with(JPG_EXTENSION) || url.ends_with(PNG_EXTENSION) {
+                    let translated = String::from(url);
+                    let supported_media = SupportedMedia {
+                        components: vec![translated],
+                        media_type: MediaType::RedditImage,
+                    };
                     media.push(supported_media);
                 }
-            } else {
-                // if the URL uses the reddit video subdomain, but the link does not
-                // point directly to the mp4, then use the fallback URL to get the
-                // appropriate link. The video quality might range from 96p to 720p
-                if let Some(m) = &data.media {
-                    if let Some(v) = &m.reddit_video {
-                        let fallback_url =
-                            String::from(&v.fallback_url).replace("?source=fallback", "");
-                        if let Some(supported_media) = get_reddit_video(&fallback_url).await? {
-                            media.push(supported_media);
+                if url.ends_with(GIF_EXTENSION) {
+                    let translated = String::from(url);
+                    let translated = SupportedMedia {
+                        components: vec![translated],
+                        media_type: MediaType::RedditGif,
+                    };
+                    media.push(translated);
+                }
+            }
+
+            // reddit mp4 videos
+            if url.contains(REDDIT_VIDEO_SUBDOMAIN) {
+                // if the URL uses the reddit video subdomain and if the extension is
+                // mp4, then we can use the URL as is.
+                if url.ends_with(MP4_EXTENSION) {
+                    let video_url = String::from(url);
+                    if let Some(supported_media) = self.get_reddit_video(&video_url).await? {
+                        media.push(supported_media);
+                    }
+                } else {
+                    // if the URL uses the reddit video subdomain, but the link does not
+                    // point directly to the mp4, then use the fallback URL to get the
+                    // appropriate link. The video quality might range from 96p to 720p
+                    if let Some(m) = &data.media {
+                        if let Some(v) = &m.reddit_video {
+                            let fallback_url =
+                                String::from(&v.fallback_url).replace("?source=fallback", "");
+                            if let Some(supported_media) = self.get_reddit_video(&fallback_url).await? {
+                                media.push(supported_media);
+                            }
                         }
                     }
                 }
             }
-        }
 
-        // reddit image galleries
-        if url.contains(REDDIT_DOMAIN) && url.contains(REDDIT_GALLERY_PATH) {
-            if let Some(gallery) = gallery_info {
-                // collect all the URLs for the images in the album
-                let mut image_urls = Vec::new();
-                for item in gallery.items.iter() {
-                    // extract the media ID from each gallery item and reconstruct the image URL
-                    let image_url = format!(
-                        "https://{}/{}.{}",
-                        REDDIT_IMAGE_SUBDOMAIN, item.media_id, JPG_EXTENSION
-                    );
-                    image_urls.push(image_url);
-                }
-                let supported_media =
-                    SupportedMedia { components: image_urls, media_type: MediaType::RedditImage };
-                media.push(supported_media);
-            }
-        }
-
-        // gfycat and redgifs
-        if url.contains(GFYCAT_DOMAIN) || url.contains(REDGIFS_DOMAIN) {
-            // if the Gfycat/Redgifs URL points directly to the mp4, download as is
-            if url.ends_with(MP4_EXTENSION) {
-                let supported_media = SupportedMedia {
-                    components: vec![String::from(url)],
-                    media_type: MediaType::GfycatGif,
-                };
-                media.push(supported_media);
-            } else {
-                // if the provided link is a gfycat post link, use the gfycat API
-                // to get the URL. gfycat likes to use lowercase names in their posts
-                // but the ID for the GIF is Pascal-cased. The case-conversion info
-                // can only be obtained from the API at the moment
-                if let Some(supported_media) = gfy_to_mp4(url).await? {
+            // reddit image galleries
+            if url.contains(REDDIT_DOMAIN) && url.contains(REDDIT_GALLERY_PATH) {
+                if let Some(gallery) = gallery_info {
+                    // collect all the URLs for the images in the album
+                    let mut image_urls = Vec::new();
+                    for item in gallery.items.iter() {
+                        // extract the media ID from each gallery item and reconstruct the image URL
+                        let image_url = format!(
+                            "https://{}/{}.{}",
+                            REDDIT_IMAGE_SUBDOMAIN, item.media_id, JPG_EXTENSION
+                        );
+                        image_urls.push(image_url);
+                    }
+                    let supported_media =
+                        SupportedMedia { components: image_urls, media_type: MediaType::RedditImage };
                     media.push(supported_media);
                 }
             }
-        }
 
-        // giphy
-        if url.contains(GIPHY_DOMAIN) {
-            // giphy has multiple CDN networks named {media0, .., media5}
-            // links can point to the canonical media subdomain or any content domains
-            if url.contains(GIPHY_MEDIA_SUBDOMAIN)
-                || url.contains(GIPHY_MEDIA_SUBDOMAIN_0)
-                || url.contains(GIPHY_MEDIA_SUBDOMAIN_1)
-                || url.contains(GIPHY_MEDIA_SUBDOMAIN_2)
-                || url.contains(GIPHY_MEDIA_SUBDOMAIN_3)
-                || url.contains(GIPHY_MEDIA_SUBDOMAIN_4)
-            {
-                // if we encounter gif, mp4 or gifv - download as is
-                if url.ends_with(GIF_EXTENSION)
-                    || url.ends_with(MP4_EXTENSION)
-                    || url.ends_with(GIFV_EXTENSION)
-                {
+            // gfycat and redgifs
+            if url.contains(GFYCAT_DOMAIN) || url.contains(REDGIFS_DOMAIN) {
+                // if the Gfycat/Redgifs URL points directly to the mp4, download as is
+                if url.ends_with(MP4_EXTENSION) {
                     let supported_media = SupportedMedia {
                         components: vec![String::from(url)],
+                        media_type: MediaType::GfycatGif,
+                    };
+                    media.push(supported_media);
+                } else {
+                    // if the provided link is a gfycat post link, use the gfycat API
+                    // to get the URL. gfycat likes to use lowercase names in their posts
+                    // but the ID for the GIF is Pascal-cased. The case-conversion info
+                    // can only be obtained from the API at the moment
+                    if let Some(supported_media) = self.gfy_to_mp4(url).await? {
+                        media.push(supported_media);
+                    }
+                }
+            }
+
+            // giphy
+            if url.contains(GIPHY_DOMAIN) {
+                // giphy has multiple CDN networks named {media0, .., media5}
+                // links can point to the canonical media subdomain or any content domains
+                if url.contains(GIPHY_MEDIA_SUBDOMAIN)
+                    || url.contains(GIPHY_MEDIA_SUBDOMAIN_0)
+                    || url.contains(GIPHY_MEDIA_SUBDOMAIN_1)
+                    || url.contains(GIPHY_MEDIA_SUBDOMAIN_2)
+                    || url.contains(GIPHY_MEDIA_SUBDOMAIN_3)
+                    || url.contains(GIPHY_MEDIA_SUBDOMAIN_4)
+                {
+                    // if we encounter gif, mp4 or gifv - download as is
+                    if url.ends_with(GIF_EXTENSION)
+                        || url.ends_with(MP4_EXTENSION)
+                        || url.ends_with(GIFV_EXTENSION)
+                    {
+                        let supported_media = SupportedMedia {
+                            components: vec![String::from(url)],
+                            media_type: MediaType::GiphyGif,
+                        };
+                        media.push(supported_media);
+                    }
+                } else {
+                    // if the link points to the giphy post rather than the media link,
+                    // use the scheme below to get the actual URL for the gif.
+                    let path = &parsed[Position::AfterHost..Position::AfterPath];
+                    let media_id = path.split("-").last().unwrap();
+                    let supported_media = SupportedMedia {
+                        components: vec![format!(
+                            "https://{}/media/{}.gif",
+                            GIPHY_MEDIA_SUBDOMAIN, media_id
+                        )],
                         media_type: MediaType::GiphyGif,
                     };
                     media.push(supported_media);
                 }
-            } else {
-                // if the link points to the giphy post rather than the media link,
-                // use the scheme below to get the actual URL for the gif.
-                let path = &parsed[Position::AfterHost..Position::AfterPath];
-                let media_id = path.split("-").last().unwrap();
-                let supported_media = SupportedMedia {
-                    components: vec![format!(
-                        "https://{}/media/{}.gif",
-                        GIPHY_MEDIA_SUBDOMAIN, media_id
-                    )],
-                    media_type: MediaType::GiphyGif,
-                };
-                media.push(supported_media);
+            }
+
+            // imgur
+            // NOTE: only support direct links for gifv and images
+            // *No* support for image and gallery posts.
+            if url.contains(IMGUR_DOMAIN) {
+                if url.contains(IMGUR_SUBDOMAIN) && url.ends_with(GIFV_EXTENSION) {
+                    // if the extension is gifv, then replace gifv->mp4 to get the video URL
+                    let supported_media = SupportedMedia {
+                        components: vec![url.replace(GIFV_EXTENSION, MP4_EXTENSION)],
+                        media_type: MediaType::ImgurGif,
+                    };
+                    media.push(supported_media);
+                }
+                if url.contains(IMGUR_SUBDOMAIN)
+                    && (url.ends_with(PNG_EXTENSION) || url.ends_with(JPG_EXTENSION))
+                {
+                    let supported_media = SupportedMedia {
+                        components: vec![String::from(url)],
+                        media_type: MediaType::ImgurImage,
+                    };
+                    media.push(supported_media);
+                }
             }
         }
 
-        // imgur
-        // NOTE: only support direct links for gifv and images
-        // *No* support for image and gallery posts.
-        if url.contains(IMGUR_DOMAIN) {
-            if url.contains(IMGUR_SUBDOMAIN) && url.ends_with(GIFV_EXTENSION) {
-                // if the extension is gifv, then replace gifv->mp4 to get the video URL
-                let supported_media = SupportedMedia {
-                    components: vec![url.replace(GIFV_EXTENSION, MP4_EXTENSION)],
-                    media_type: MediaType::ImgurGif,
-                };
-                media.push(supported_media);
-            }
-            if url.contains(IMGUR_SUBDOMAIN)
-                && (url.ends_with(PNG_EXTENSION) || url.ends_with(JPG_EXTENSION))
-            {
-                let supported_media = SupportedMedia {
-                    components: vec![String::from(url)],
-                    media_type: MediaType::ImgurImage,
-                };
-                media.push(supported_media);
-            }
-        }
+        Ok(media)
     }
-
-    Ok(media)
 }
