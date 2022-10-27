@@ -1,7 +1,7 @@
 use crate::errors::ReddSaverError;
 
 use log::debug;
-use reqwest::header::{AUTHORIZATION, USER_AGENT};
+use reqwest::header::AUTHORIZATION;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -15,8 +15,8 @@ pub struct Client<'a> {
     username: &'a str,
     /// Login password
     password: &'a str,
-    /// Unique User agent string
-    user_agent: &'a str,
+    /// Reqwest client
+    session: &'a reqwest::Client
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -37,14 +37,14 @@ impl<'a> Client<'a> {
         secret: &'a str,
         username: &'a str,
         password: &'a str,
-        agent: &'a str,
+        session: &'a reqwest::Client,
     ) -> Self {
         Self {
             client_id: &id,
             client_secret: &secret,
             username: &username,
             password: &password,
-            user_agent: &agent,
+            session: &session
         }
     }
 
@@ -57,10 +57,8 @@ impl<'a> Client<'a> {
         body.insert("password", self.password);
         body.insert("grant_type", &grant_type);
 
-        let client = reqwest::Client::new();
-        let auth = client
+        let auth = self.session
             .post("https://www.reddit.com/api/v1/access_token")
-            .header(USER_AGENT, self.user_agent)
             // base64 encoded <clientID>:<clientSecret> should be sent as a basic token
             // along with the body of the message
             .header(AUTHORIZATION, format!("Basic {}", basic_token))

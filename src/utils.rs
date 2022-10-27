@@ -1,24 +1,17 @@
 use crate::errors::ReddSaverError;
 use mime::Mime;
-use rand::Rng;
-use random_names::RandomName;
 use reqwest::header::CONTENT_TYPE;
 use std::path::Path;
 use std::str::FromStr;
+use std::env;
 use which::which;
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Generate user agent string of the form <name>:<version>.
 /// If no arguments passed generate random name and number
-pub fn get_user_agent_string(name: Option<String>, version: Option<String>) -> String {
-    if let (Some(v), Some(n)) = (version, name) {
-        format!("{}:{}", n, v)
-    } else {
-        let random_name = RandomName::new().to_string().replace(" ", "").to_lowercase();
-
-        let mut rng = rand::thread_rng();
-        let random_version = rng.gen::<u32>();
-        format!("{}:{}", random_name, random_version)
-    }
+pub fn get_user_agent_string(username: &str) -> String {
+    format!("reddsaver:{} (by u/{}", VERSION, username)
 }
 
 /// Check if a particular path is present on the filesystem
