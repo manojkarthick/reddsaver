@@ -4,6 +4,7 @@ use log::debug;
 use reqwest::header::{AUTHORIZATION, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use base64::{Engine as _, engine::general_purpose};
 
 /// To generate the Reddit Client ID and secret, go to reddit [preferences](https://www.reddit.com/prefs/apps)
 pub struct Client<'a> {
@@ -49,7 +50,8 @@ impl<'a> Client<'a> {
     }
 
     pub async fn login(&self) -> Result<Auth, ReddSaverError> {
-        let basic_token = base64::encode(format!("{}:{}", self.client_id, self.client_secret));
+        // let basic_token = base64::encode(format!("{}:{}", self.client_id, self.client_secret));
+        let basic_token = general_purpose::STANDARD.encode(format!("{}:{}", self.client_id, self.client_secret));
         let grant_type = String::from("password");
 
         let mut body = HashMap::new();
