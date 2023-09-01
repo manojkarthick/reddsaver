@@ -1,6 +1,6 @@
 use std::env;
 
-use clap::{crate_version, Command, Arg};
+use clap::{crate_version, Command, Arg, ArgAction};
 use env_logger::Env;
 use log::{debug, info, warn};
 
@@ -26,66 +26,74 @@ async fn main() -> Result<(), ReddSaverError> {
         .author("Manoj Karthick Selva Kumar")
         .about("Simple CLI tool to download saved media from Reddit")
         .arg(
-            Arg::with_name("environment")
-                .short("e")
+            Arg::new("environment")
+                .short('e')
                 .long("from-env")
                 .value_name("ENV_FILE")
                 .help("Set a custom .env style file with secrets")
                 .default_value(".env")
-                .takes_value(true),
+                .action(ArgAction::Set)
+                // .takes_value(true),
         )
         .arg(
-            Arg::with_name("data_directory")
-                .short("d")
+            Arg::new("data_directory")
+                .short('d')
                 .long("data-dir")
                 .value_name("DATA_DIR")
                 .help("Directory to save the media to")
                 .default_value("data")
-                .takes_value(true),
+                .action(ArgAction::Set)
+                // .takes_value(true),
         )
         .arg(
-            Arg::with_name("show_config")
-                .short("s")
+            Arg::new("show_config")
+                .short('s')
                 .long("show-config")
-                .takes_value(false)
+                .action(ArgAction::Set)
+                // .takes_value(false)
                 .help("Show the current config being used"),
         )
         .arg(
-            Arg::with_name("dry_run")
-                .short("r")
+            Arg::new("dry_run")
+                .short('r')
                 .long("dry-run")
-                .takes_value(false)
+                .action(ArgAction::Set)
+                // .takes_value(false)
                 .help("Dry run and print the URLs of saved media to download"),
         )
         .arg(
-            Arg::with_name("human_readable")
-                .short("H")
+            Arg::new("human_readable")
+                .short('H')
                 .long("human-readable")
-                .takes_value(false)
+                .action(ArgAction::Set)
+                // .takes_value(false)
                 .help("Use human readable names for files"),
         )
         .arg(
-            Arg::with_name("subreddits")
-                .short("S")
+            Arg::new("subreddits")
+                .short('S')
                 .long("subreddits")
-                .multiple(true)
+                // .multiple(true)
                 .value_name("SUBREDDITS")
-                .value_delimiter(",")
+                .value_delimiter(',')
                 .help("Download media from these subreddits only")
-                .takes_value(true),
+                .action(ArgAction::Set)
+                // .takes_value(true),
         )
         .arg(
-            Arg::with_name("upvoted")
-                .short("u")
+            Arg::new("upvoted")
+                .short('u')
                 .long("--upvoted")
-                .takes_value(false)
+                .action(ArgAction::Set)
+                // .takes_value(false)
                 .help("Download media from upvoted posts"),
         )
         .arg(
-            Arg::with_name("undo")
-                .short("U")
+            Arg::new("undo")
+                .short('U')
                 .long("undo")
-                .takes_value(false)
+                .action(ArgAction::Set)
+                // .takes_value(false)
                 .help("Unsave or remote upvote for post after processing"),
         )
         .get_matches();
