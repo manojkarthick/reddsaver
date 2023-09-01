@@ -1,6 +1,6 @@
 use std::env;
 
-use clap::{crate_version, App, Arg};
+use clap::{crate_version, Command, Arg};
 use env_logger::Env;
 use log::{debug, info, warn};
 
@@ -21,7 +21,7 @@ mod utils;
 
 #[tokio::main]
 async fn main() -> Result<(), ReddSaverError> {
-    let matches = App::new("ReddSaver")
+    let matches = Command::new("ReddSaver")
         .version(crate_version!())
         .author("Manoj Karthick Selva Kumar")
         .about("Simple CLI tool to download saved media from Reddit")
