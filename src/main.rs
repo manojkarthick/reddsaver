@@ -1,6 +1,6 @@
 use std::env;
 
-use clap::{crate_version, Command, Arg, ArgAction};
+use clap::{crate_version, Command, Arg, ArgAction, value_parser};
 use env_logger::Env;
 use log::{debug, info, warn};
 
@@ -49,7 +49,7 @@ async fn main() -> Result<(), ReddSaverError> {
             Arg::new("show_config")
                 .short('s')
                 .long("show-config")
-                .action(ArgAction::Set)
+                .action(ArgAction::SetTrue)
                 // .takes_value(false)
                 .help("Show the current config being used"),
         )
@@ -57,7 +57,7 @@ async fn main() -> Result<(), ReddSaverError> {
             Arg::new("dry_run")
                 .short('r')
                 .long("dry-run")
-                .action(ArgAction::Set)
+                .action(ArgAction::SetTrue)
                 // .takes_value(false)
                 .help("Dry run and print the URLs of saved media to download"),
         )
@@ -65,26 +65,28 @@ async fn main() -> Result<(), ReddSaverError> {
             Arg::new("human_readable")
                 .short('H')
                 .long("human-readable")
-                .action(ArgAction::Set)
+                .action(ArgAction::SetTrue)
                 // .takes_value(false)
                 .help("Use human readable names for files"),
         )
         .arg(
             Arg::new("subreddits")
+                .action(ArgAction::Append)
                 .short('S')
                 .long("subreddits")
                 // .multiple(true)
-                .value_name("SUBREDDITS")
+                // .value_name("SUBREDDITS")
                 .value_delimiter(',')
+                .value_parser(value_parser!(String))
+                .num_args(0..)
                 .help("Download media from these subreddits only")
-                .action(ArgAction::Set)
                 // .takes_value(true),
         )
         .arg(
             Arg::new("upvoted")
                 .short('u')
                 .long("--upvoted")
-                .action(ArgAction::Set)
+                .action(ArgAction::SetTrue)
                 // .takes_value(false)
                 .help("Download media from upvoted posts"),
         )
@@ -92,30 +94,41 @@ async fn main() -> Result<(), ReddSaverError> {
             Arg::new("undo")
                 .short('U')
                 .long("undo")
-                .action(ArgAction::Set)
+                .action(ArgAction::SetTrue)
                 // .takes_value(false)
                 .help("Unsave or remote upvote for post after processing"),
         )
         .get_matches();
 
-    let env_file = matches.value_of("environment").unwrap();
-    let data_directory = String::from(matches.value_of("data_directory").unwrap());
+    // let env_file = matches.value_of("environment").unwrap();
+    let env_file = matches.get_one::<String>("environment").unwrap();
+    let data_directory = matches.get_one::<String>("data_directory").unwrap();
+    // let data_directory = String::from(matches.value_of("data_directory").unwrap());
     // generate the URLs to download from without actually downloading the media
-    let should_download = !matches.is_present("dry_run");
+    // let should_download = !matches.is_present("dry_run");
+    let should_download = !matches.get_flag("dry_run");
     // check if ffmpeg is present for combining video streams
     let ffmpeg_available = application_present(String::from("ffmpeg"));
     // generate human readable file names instead of MD5 Hashed file names
-    let use_human_readable = matches.is_present("human_readable");
+    // let use_human_readable = matches.is_present("human_readable");
+    let use_human_readable = matches.get_flag("human_readable");
     // restrict downloads to these subreddits
-    let subreddits: Option<Vec<&str>> = if matches.is_present("subreddits") {
-        Some(matches.values_of("subreddits").unwrap().collect())
-    } else {
-        None
-    };
-    let upvoted = matches.is_present("upvoted");
+    let subreddits = matches
+        .get_many::<String>("subreddits")
+        .unwrap()
+        .map(|v| v.as_str())
+        .collect::<Vec<_>>();
+    // let subreddits: Option<Vec<&str>> = if matches.is_present("subreddits") {
+    //     Some(matches.values_of("subreddits").unwrap().collect())
+    // } else {
+    //     None
+    // };
+    let upvoted = matches.get_flag("upvoted");
+    // let upvoted = matches.is_present("upvoted");
     let listing_type = if upvoted { &ListingType::Upvoted } else { &ListingType::Saved };
 
-    let undo = matches.is_present("undo");
+    let undo = matches.get_flag("undo");
+    // let undo = matches.is_present("undo");
 
     // initialize environment from the .env file
     dotenv::from_filename(env_file).ok();
@@ -134,8 +147,10 @@ async fn main() -> Result<(), ReddSaverError> {
         return Err(DataDirNotFound);
     }
 
+    let subs = coerce_subreddits(subreddits);
+
     // if the option is show-config, show the configuration and return immediately
-    if matches.is_present("show_config") {
+    if matches.get_flag("show_config") {
         info!("Current configuration:");
         info!("ENVIRONMENT_FILE = {}", &env_file);
         info!("DATA_DIRECTORY = {}", &data_directory);
@@ -144,7 +159,7 @@ async fn main() -> Result<(), ReddSaverError> {
         info!("USERNAME = {}", &username);
         info!("PASSWORD = {}", mask_sensitive(&password));
         info!("USER_AGENT = {}", &user_agent);
-        info!("SUBREDDITS = {}", print_subreddits(&subreddits));
+        info!("SUBREDDITS = {}", print_subreddits(&subs));
         info!("UPVOTED = {}", upvoted);
         info!("UNDO = {}", undo);
         info!("FFMPEG AVAILABLE = {}", ffmpeg_available);
@@ -181,12 +196,14 @@ async fn main() -> Result<(), ReddSaverError> {
     let listing = user.listing(listing_type).await?;
     debug!("Posts: {:#?}", listing);
 
+
     let downloader = Downloader::new(
         &user,
         &listing,
         &listing_type,
         &data_directory,
-        &subreddits,
+        // &subreddits,
+        &subs,
         should_download,
         use_human_readable,
         undo,

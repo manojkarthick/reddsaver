@@ -45,6 +45,16 @@ pub fn mask_sensitive(word: &str) -> String {
     };
 }
 
+/// Since we had to convert the set of subreddits into a vec, we'll coerce them
+///   back into an Option.
+pub fn coerce_subreddits(subreddits: Vec<&str>) -> Option<Vec<&str>> {
+    if subreddits.len() > 0 {
+        Some(subreddits)
+    } else {
+        None
+    }
+}
+
 /// Return delimited subreddit names or EMPTY if None
 pub fn print_subreddits(subreddits: &Option<Vec<&str>>) -> String {
     return if let Some(s) = subreddits { s.join(",") } else { String::from("<ALL>") };
