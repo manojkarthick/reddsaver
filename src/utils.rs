@@ -122,7 +122,7 @@ pub async fn fetch_redgif_url(orig_url: &str) -> reqwest::Result<reqwest::Respon
     info!("Token: {}", title);
     //let extension = caps.name("ext").map_or("", |n| n.as_str());
     // So now we've gone from the original url to 'whisperedfunbunny' and 'mp4'
-    let gifloc = format!("{}/{}", RG_GIFLOC_URL, &title);
+    let gifloc = format!("{}/{}", RG_GIFLOC_URL, &title.to_lowercase());
     info!("Gifloc: {}", gifloc);
     let rgtoken = format!("Bearer {}", fetch_redgif_token().await.unwrap());
     info!("RGToken: {}", rgtoken);
