@@ -137,9 +137,13 @@ pub async fn fetch_redgif_url(rg_token: &str, orig_url: &str) -> reqwest::Result
     .header("User-Agent", LOC_AGENT)
     .header("Authorization", rg_token)
     .send().await {
-        Ok(e) => e.text().await?,
+        Ok(e) => {
+            debug!("URL Response: {:#?}", e);
+            e.text().await?
+        }
         Err(e) => return Err(e)
     };
+    // debug!("URL Response: {:#?}", response);
     debug!("Response for {}: {}", &gifloc, &response.as_str());
     let resp_data: Value = match serde_json::from_str(&response) {
         Ok(t) => t,
@@ -147,7 +151,8 @@ pub async fn fetch_redgif_url(rg_token: &str, orig_url: &str) -> reqwest::Result
     };
     let final_url = match resp_data["gif"]["urls"]["hd"].as_str() {
         Some(x) => x,
-        None => panic!("No gif json found at {} for {:#?}", orig_url, resp_data),
+        None => "http://127.0.0.1/invalid"
+        // None => panic!("No gif json found at {} for {:#?}", orig_url, resp_data),
     };
     reqwest::Client::new()
     .get(final_url)

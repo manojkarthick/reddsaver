@@ -430,6 +430,8 @@ async fn save_or_skip(url: &str, file_name: &str) -> Result<MediaStatus, ReddSav
     }
 }
 
+//todo!("[2023-09-06T23:19:53Z DEBUG reqwest::async_impl::client] redirecting 'https://i.imgur.com/removed.mp4' to 'https://i.imgur.com/removed.png'")
+
 /// Download media from the given url and save to data directory. Also create data directory if not present already
 async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverError> {
     // create directory if it does not already exist
