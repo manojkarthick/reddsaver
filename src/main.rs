@@ -113,11 +113,12 @@ async fn main() -> Result<(), ReddSaverError> {
     // let use_human_readable = matches.is_present("human_readable");
     let use_human_readable = matches.get_flag("human_readable");
     // restrict downloads to these subreddits
-    let subreddits = matches
+    let subreddits = match matches
         .get_many::<String>("subreddits")
-        .unwrap()
-        .map(|v| v.as_str())
-        .collect::<Vec<_>>();
+        {
+            Some(t) => t.map(|v| v.as_str()).collect::<Vec<_>>(),
+            None => vec!(""),
+        };
     // let subreddits: Option<Vec<&str>> = if matches.is_present("subreddits") {
     //     Some(matches.values_of("subreddits").unwrap().collect())
     // } else {

@@ -59,7 +59,7 @@ pub fn mask_sensitive(word: &str) -> String {
 /// Since we had to convert the set of subreddits into a vec, we'll coerce them
 ///   back into an Option.
 pub fn coerce_subreddits(subreddits: Vec<&str>) -> Option<Vec<&str>> {
-    if subreddits.len() > 0 {
+    if subreddits.len() > 0 && subreddits[0] != "" {
         Some(subreddits)
     } else {
         None
