@@ -51,7 +51,7 @@ static GIPHY_MEDIA_SUBDOMAIN_4: &str = "media4.giphy.com";
 
 lazy_static!{
     static ref RG_TOKEN : AsyncOnce<String> = AsyncOnce::new(async {
-        let rgtoken = format!("Bearer {}", fetch_redgif_token().await.unwrap());
+        let rgtoken = fetch_redgif_token().await.unwrap();
         rgtoken
     });
 }
