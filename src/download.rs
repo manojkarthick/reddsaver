@@ -220,14 +220,14 @@ impl<'a> Downloader<'a> {
                                 if (media_type == MediaType::RedditVideoWithoutAudio
                                     || media_type == MediaType::RedditVideoWithAudio)
                                     && !extension.ends_with(".mp4") {
-                                    extension = format!("{}.{}", extension, ".mp4");
+                                    extension = format!("{}.{}", extension, "mp4");
                                 }
                                 if media_type == MediaType::RedgifsVideo {
-                                    if url.contains(MP4_EXTENSION){
-                                        extension = ".mp4".to_string();
-                                    } else {
-                                        extension = ".gif".to_string();
-                                    }
+                                    // if url.contains(MP4_EXTENSION){
+                                    extension = "mp4".to_string();
+                                    // } else {
+                                    //     extension = ".gif".to_string();
+                                    // }
                                 }
                                 let file_name = self.generate_file_name(
                                     &url,
