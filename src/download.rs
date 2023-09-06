@@ -8,16 +8,18 @@ use std::{fs, io};
 
 use futures::stream::FuturesUnordered;
 use futures::TryStreamExt;
+use lazy_static::lazy_static;
 use log::{debug, error, info, warn};
 use reqwest::StatusCode;
 use tempfile::tempdir;
 use url::{Position, Url};
+use async_once::AsyncOnce;
 
 use crate::errors::ReddSaverError;
 use crate::structures::{GfyData, PostData};
 use crate::structures::{Listing, Summary};
 use crate::user::{ListingType, User};
-use crate::utils::{check_path_present, check_url_is_mp4, fetch_redgif_url};
+use crate::utils::{check_path_present, check_url_is_mp4, fetch_redgif_url, fetch_redgif_token};
 
 static JPG_EXTENSION: &str = "jpg";
 static PNG_EXTENSION: &str = "png";
@@ -46,6 +48,13 @@ static GIPHY_MEDIA_SUBDOMAIN_1: &str = "media1.giphy.com";
 static GIPHY_MEDIA_SUBDOMAIN_2: &str = "media2.giphy.com";
 static GIPHY_MEDIA_SUBDOMAIN_3: &str = "media3.giphy.com";
 static GIPHY_MEDIA_SUBDOMAIN_4: &str = "media4.giphy.com";
+
+lazy_static!{
+    static ref RG_TOKEN : AsyncOnce<String> = AsyncOnce::new(async {
+        let rgtoken = format!("Bearer {}", fetch_redgif_token().await.unwrap());
+        rgtoken
+    });
+}
 
 /// Status of media processing
 enum MediaStatus {
@@ -433,7 +442,7 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
     }
     let maybe_response: reqwest::Result<reqwest::Response>;
     if url.contains(REDGIFS_DOMAIN) {
-        maybe_response = fetch_redgif_url(url).await;
+        maybe_response = fetch_redgif_url(RG_TOKEN.get().await, url).await;
     } else {
         maybe_response = reqwest::get(url).await;
     };

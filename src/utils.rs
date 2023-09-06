@@ -15,6 +15,7 @@ use which::which;
 static LOC_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15";
 static RG_API_URL: &str = "https://api.redgifs.com/v2/auth/temporary";
 static RG_GIFLOC_URL: &str = "https://api.redgifs.com/v2/gifs";
+
 //static REDGIFS_DOMAIN: &str = "redgifs.com";
 
 /// Generate user agent string of the form <name>:<version>.
@@ -111,32 +112,33 @@ pub async fn fetch_redgif_token() -> Result<String, ReddSaverError> {
         Some(t) => t,
         None => return Err(ReddSaverError::CouldNotSaveImageError("".to_string())),
     };
-    Ok(token.to_string())
+    let fulltoken = format!("Bearer {}", token);
+    Ok(fulltoken.to_string())
 }
 
-pub async fn fetch_redgif_url(orig_url: &str) -> reqwest::Result<reqwest::Response> {
+pub async fn fetch_redgif_url(rg_token: &str, orig_url: &str) -> reqwest::Result<reqwest::Response> {
     debug!("Original URL: {}", orig_url);
-    let re = regex::Regex::new(r".*redgifs.com*/(?P<token>[^-]+)\-?.*\.(?P<ext>[a-z0-9]{3,4})").unwrap();
+    let re = regex::Regex::new(r".*redgifs.com*/(?P<token>[a-z]+)").unwrap();
     let caps = re.captures(orig_url).unwrap();
 
     let title = caps.name("token").map_or("", |m| m.as_str());
     debug!("Token: {}", title);
     //let extension = caps.name("ext").map_or("", |n| n.as_str());
-    // So now we've gone from the original url to 'whisperedfunbunny' and 'mp4'
+    // So now we've gone from the original url to 'whisperedfunbunny'
     let gifloc = format!("{}/{}", RG_GIFLOC_URL, &title.to_lowercase());
     debug!("Gifloc: {}", gifloc);
-    let rgtoken = format!("Bearer {}", fetch_redgif_token().await.unwrap());
-    debug!("RGToken: {}", rgtoken);
+    // let rgtoken = fetch_redgif_token().await.unwrap();
+    debug!("RGToken: {}", rg_token);
     let response = reqwest::Client::new()
     .get(&gifloc)
     .header("User-Agent", LOC_AGENT)
-    .header("Authorization", &rgtoken)
+    .header("Authorization", rg_token)
     .send().await?.text().await?;
     let resp_data: Value = serde_json::from_str(&response).unwrap();
     let final_url = resp_data["gif"]["urls"]["hd"].as_str().unwrap();
     reqwest::Client::new()
     .get(final_url)
     .header("User-Agent", LOC_AGENT)
-    .header("Authorization", &rgtoken)
+    .header("Authorization", rg_token)
     .send().await
 }
