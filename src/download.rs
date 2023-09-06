@@ -213,6 +213,13 @@ impl<'a> Downloader<'a> {
                                     && !extension.ends_with(".mp4") {
                                     extension = format!("{}.{}", extension, ".mp4");
                                 }
+                                if media_type == MediaType::RedgifsVideo {
+                                    if url.contains(MP4_EXTENSION){
+                                        extension = ".mp4".to_string();
+                                    } else {
+                                        extension = ".gif".to_string();
+                                    }
+                                }
                                 let file_name = self.generate_file_name(
                                     &url,
                                     &subreddit,
@@ -654,21 +661,27 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
         // split redgifs to its own handler
         if url.contains(REDGIFS_DOMAIN) {
             debug!("Found RG url {}", url);
-            if url.ends_with(MP4_EXTENSION) {
-                let supported_media = SupportedMedia {
-                    components: vec![String::from(url)],
-                    media_type: MediaType::RedgifsVideo,
-                };
-                media.push(supported_media);
-            } else {
-                // if the provided link is a gfycat post link, use the gfycat API
-                // to get the URL. gfycat likes to use lowercase names in their posts
-                // but the ID for the GIF is Pascal-cased. The case-conversion info
-                // can only be obtained from the API at the moment
-                if let Some(supported_media) = gfy_to_mp4(url).await? {
-                    media.push(supported_media);
-                }
-            }
+            let supported_media = SupportedMedia {
+                components: vec![String::from(url)],
+                media_type: MediaType::RedgifsVideo,
+            };
+            media.push(supported_media);
+            // we're going to pull the 'hd' link no matter what, so the extension doesn't matter
+            // if url.contains(MP4_EXTENSION) {
+            //     let supported_media = SupportedMedia {
+            //         components: vec![String::from(url)],
+            //         media_type: MediaType::RedgifsVideo,
+            //     };
+            //     media.push(supported_media);
+            // } else {
+            //     // if the provided link is a gfycat post link, use the gfycat API
+            //     // to get the URL. gfycat likes to use lowercase names in their posts
+            //     // but the ID for the GIF is Pascal-cased. The case-conversion info
+            //     // can only be obtained from the API at the moment
+            //     if let Some(supported_media) = gfy_to_mp4(url).await? {
+            //         media.push(supported_media);
+            //     }
+            // }
         }
 
         // giphy
