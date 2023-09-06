@@ -425,10 +425,8 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
     }
     let maybe_response: reqwest::Result<reqwest::Response>;
     if url.contains(REDGIFS_DOMAIN) {
-        info!("Fetching RG url: {}", url);
         maybe_response = fetch_redgif(url).await;
     } else {
-        info!("Fetching NRG url: {}", url);
         maybe_response = reqwest::get(url).await;
     };
     if let Ok(response) = maybe_response {

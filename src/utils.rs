@@ -7,7 +7,7 @@ use reqwest::header::CONTENT_TYPE;
 use serde_json::Value;
 // use serde::{Deserialize, Serialize};
 // use regex::Regex;
-// use log::debug;
+use log::info;
 use std::path::Path;
 use std::str::FromStr;
 use which::which;
@@ -119,10 +119,13 @@ pub async fn fetch_redgif_url(orig_url: &str) -> reqwest::Result<reqwest::Respon
     let caps = re.captures(orig_url).unwrap();
 
     let title = caps.name("token").map_or("", |m| m.as_str());
+    info!("Token: {}", title);
     //let extension = caps.name("ext").map_or("", |n| n.as_str());
     // So now we've gone from the original url to 'whisperedfunbunny' and 'mp4'
     let gifloc = format!("{}/{}", RG_GIFLOC_URL, &title);
+    info!("Gifloc: {}", gifloc);
     let rgtoken = format!("Bearer {}", fetch_redgif_token().await.unwrap());
+    info!("RGToken: {}", rgtoken);
     let response = reqwest::Client::new()
     .get(&gifloc)
     .header("User-Agent", LOC_AGENT)
