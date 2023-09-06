@@ -138,9 +138,4 @@ pub async fn fetch_redgif_url(orig_url: &str) -> reqwest::Result<reqwest::Respon
     .header("User-Agent", LOC_AGENT)
     .header("Authorization", &rgtoken)
     .send().await
-    // reqwest::get(final_url).await
-}
-
-pub async fn fetch_redgif(rg_url: &str) -> reqwest::Result<reqwest::Response> {
-    fetch_redgif_url(rg_url).await
 }

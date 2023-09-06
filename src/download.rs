@@ -17,7 +17,7 @@ use crate::errors::ReddSaverError;
 use crate::structures::{GfyData, PostData};
 use crate::structures::{Listing, Summary};
 use crate::user::{ListingType, User};
-use crate::utils::{check_path_present, check_url_is_mp4, fetch_redgif};
+use crate::utils::{check_path_present, check_url_is_mp4, fetch_redgif_url};
 
 static JPG_EXTENSION: &str = "jpg";
 static PNG_EXTENSION: &str = "png";
@@ -65,6 +65,7 @@ enum MediaType {
     RedditVideoWithAudio,
     RedditVideoWithoutAudio,
     GfycatGif,
+    RedgifsVideo,
     GiphyGif,
     ImgurImage,
     ImgurGif,
@@ -425,7 +426,7 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
     }
     let maybe_response: reqwest::Result<reqwest::Response>;
     if url.contains(REDGIFS_DOMAIN) {
-        maybe_response = fetch_redgif(url).await;
+        maybe_response = fetch_redgif_url(url).await;
     } else {
         maybe_response = reqwest::get(url).await;
     };
@@ -630,13 +631,33 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
             }
         }
 
-        // gfycat and redgifs
-        if url.contains(GFYCAT_DOMAIN) || url.contains(REDGIFS_DOMAIN) {
+        // gfycat
+        if url.contains(GFYCAT_DOMAIN) {
             // if the Gfycat/Redgifs URL points directly to the mp4, download as is
             if url.ends_with(MP4_EXTENSION) {
                 let supported_media = SupportedMedia {
                     components: vec![String::from(url)],
                     media_type: MediaType::GfycatGif,
+                };
+                media.push(supported_media);
+            } else {
+                // if the provided link is a gfycat post link, use the gfycat API
+                // to get the URL. gfycat likes to use lowercase names in their posts
+                // but the ID for the GIF is Pascal-cased. The case-conversion info
+                // can only be obtained from the API at the moment
+                if let Some(supported_media) = gfy_to_mp4(url).await? {
+                    media.push(supported_media);
+                }
+            }
+        }
+
+        // split redgifs to its own handler
+        if url.contains(REDGIFS_DOMAIN) {
+            debug!("Found RG url {}", url);
+            if url.ends_with(MP4_EXTENSION) {
+                let supported_media = SupportedMedia {
+                    components: vec![String::from(url)],
+                    media_type: MediaType::RedgifsVideo,
                 };
                 media.push(supported_media);
             } else {
