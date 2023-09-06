@@ -119,7 +119,10 @@ pub async fn fetch_redgif_token() -> Result<String, ReddSaverError> {
 pub async fn fetch_redgif_url(rg_token: &str, orig_url: &str) -> reqwest::Result<reqwest::Response> {
     debug!("Original URL: {}", orig_url);
     let re = regex::Regex::new(r".*redgifs.com*/watch/(?P<token>[a-z]+)").unwrap();
-    let caps = re.captures(orig_url).unwrap();
+    let caps = match re.captures(orig_url) {
+        Some(t) => t,
+        None => panic!("Match error on URL {}", orig_url)
+    };
 
     let title = caps.name("token").map_or("", |m| m.as_str());
     debug!("Token: {}", title);
