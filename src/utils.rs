@@ -134,6 +134,7 @@ pub async fn fetch_redgif_url(rg_token: &str, orig_url: &str) -> reqwest::Result
     .header("User-Agent", LOC_AGENT)
     .header("Authorization", rg_token)
     .send().await?.text().await?;
+    debug!("Response for {}: {}", &gifloc, &response.as_str());
     let resp_data: Value = serde_json::from_str(&response).unwrap();
     let final_url = resp_data["gif"]["urls"]["hd"].as_str().unwrap();
     reqwest::Client::new()
