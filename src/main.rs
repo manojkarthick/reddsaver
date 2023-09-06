@@ -85,7 +85,7 @@ async fn main() -> Result<(), ReddSaverError> {
         .arg(
             Arg::new("upvoted")
                 .short('u')
-                .long("--upvoted")
+                .long("upvoted")
                 .action(ArgAction::SetTrue)
                 // .takes_value(false)
                 .help("Download media from upvoted posts"),
