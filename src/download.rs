@@ -17,7 +17,7 @@ use crate::errors::ReddSaverError;
 use crate::structures::{GfyData, PostData};
 use crate::structures::{Listing, Summary};
 use crate::user::{ListingType, User};
-use crate::utils::{check_path_present, check_url_is_mp4};
+use crate::utils::{check_path_present, check_url_is_mp4, fetch_redgif};
 
 static JPG_EXTENSION: &str = "jpg";
 static PNG_EXTENSION: &str = "png";
@@ -423,8 +423,12 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
         Ok(_) => (),
         Err(_e) => return Err(ReddSaverError::CouldNotCreateDirectory),
     }
-
-    let maybe_response = reqwest::get(url).await;
+    let maybe_response: reqwest::Result<reqwest::Response>;
+    if url.contains(REDGIFS_DOMAIN) {
+        maybe_response = fetch_redgif(url).await;
+    } else {
+        maybe_response = reqwest::get(url).await;
+    };
     if let Ok(response) = maybe_response {
         debug!("URL Response: {:#?}", response);
         let maybe_data = response.bytes().await;

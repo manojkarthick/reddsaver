@@ -3,9 +3,19 @@ use mime::Mime;
 use rand::Rng;
 use random_names::RandomName;
 use reqwest::header::CONTENT_TYPE;
+// use reqwest::Client;
+use serde_json::Value;
+// use serde::{Deserialize, Serialize};
+// use regex::Regex;
+// use log::debug;
 use std::path::Path;
 use std::str::FromStr;
 use which::which;
+
+static LOC_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15";
+static RG_API_URL: &str = "https://api.redgifs.com/v2/auth/temporary";
+static RG_GIFLOC_URL: &str = "https://api.redgifs.com/v2/gifs";
+//static REDGIFS_DOMAIN: &str = "redgifs.com";
 
 /// Generate user agent string of the form <name>:<version>.
 /// If no arguments passed generate random name and number
@@ -86,4 +96,43 @@ pub async fn check_url_is_mp4(url: &str) -> Result<Option<bool>, ReddSaverError>
             Ok(Some(is_video))
         }
     }
+}
+
+/// New RedGifs API requires fetching an auth token first
+pub async fn fetch_redgif_token() -> Result<String, ReddSaverError> {
+    //let user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15";
+    let response = reqwest::Client::new()
+        .get(RG_API_URL)
+        .header("User-Agent", LOC_AGENT)
+        .send().await?.text().await?;
+    let resp_data: Value = serde_json::from_str(&response).unwrap();
+    let tok_val = resp_data["token"].as_str();
+    let token = match tok_val {
+        Some(t) => t,
+        None => return Err(ReddSaverError::CouldNotSaveImageError("".to_string())),
+    };
+    Ok(token.to_string())
+}
+
+pub async fn fetch_redgif_url(orig_url: &str) -> reqwest::Result<reqwest::Response> {
+    let re = regex::Regex::new(r".*redgifs.com*/(?P<token>[^-]+)\-?.*\.(?P<ext>[a-z0-9]{3,4})").unwrap();
+    let caps = re.captures(orig_url).unwrap();
+
+    let title = caps.name("token").map_or("", |m| m.as_str());
+    //let extension = caps.name("ext").map_or("", |n| n.as_str());
+    // So now we've gone from the original url to 'whisperedfunbunny' and 'mp4'
+    let gifloc = format!("{}/{}", RG_GIFLOC_URL, &title);
+    let rgtoken = format!("Bearer {}", fetch_redgif_token().await.unwrap());
+    let response = reqwest::Client::new()
+    .get(&gifloc)
+    .header("User-Agent", LOC_AGENT)
+    .header("Authorization", rgtoken)
+    .send().await?.text().await?;
+    let resp_data: Value = serde_json::from_str(&response).unwrap();
+    let final_url = resp_data["gif"]["urls"]["hd"].as_str().unwrap();
+    reqwest::get(final_url).await
+}
+
+pub async fn fetch_redgif(rg_url: &str) -> reqwest::Result<reqwest::Response> {
+    fetch_redgif_url(rg_url).await
 }
