@@ -129,11 +129,16 @@ pub async fn fetch_redgif_url(orig_url: &str) -> reqwest::Result<reqwest::Respon
     let response = reqwest::Client::new()
     .get(&gifloc)
     .header("User-Agent", LOC_AGENT)
-    .header("Authorization", rgtoken)
+    .header("Authorization", &rgtoken)
     .send().await?.text().await?;
     let resp_data: Value = serde_json::from_str(&response).unwrap();
     let final_url = resp_data["gif"]["urls"]["hd"].as_str().unwrap();
-    reqwest::get(final_url).await
+    reqwest::Client::new()
+    .get(final_url)
+    .header("User-Agent", LOC_AGENT)
+    .header("Authorization", &rgtoken)
+    .send().await
+    // reqwest::get(final_url).await
 }
 
 pub async fn fetch_redgif(rg_url: &str) -> reqwest::Result<reqwest::Response> {
