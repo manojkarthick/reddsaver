@@ -1,7 +1,7 @@
 use std::env;
 
 use clap::{crate_version, Command, Arg, ArgAction, value_parser};
-// use env_logger::Env;
+use env_logger::Env;
 use log::{debug, info, warn};
 
 use auth::Client;
@@ -134,13 +134,7 @@ async fn main() -> Result<(), ReddSaverError> {
     dotenv::from_filename(env_file).ok();
 
     // initialize logger for the app and set logging level to info if no environment variable present
-    // let logenv = Env::default().filter("RS_LOG").default_filter_or("info");
-    let logenv = env::var("RS_LOG").unwrap_or(
-        match env::var("RS_LOG") {
-            Ok(t) => t.to_string(),
-            Err(_) => "info".to_string(),
-        }
-    );
+    let logenv = Env::default().filter("RS_LOG").default_filter_or("info");
     env_logger::Builder::from_env(logenv).init();
 
     let client_id = env::var("CLIENT_ID")?;
