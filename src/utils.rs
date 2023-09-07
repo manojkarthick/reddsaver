@@ -3,17 +3,19 @@ use mime::Mime;
 use rand::Rng;
 use random_names::RandomName;
 use reqwest::header::CONTENT_TYPE;
-// use reqwest::Client;
 use serde_json::Value;
-// use serde::{Deserialize, Serialize};
-// use regex::Regex;
 use log::debug;
 use std::path::Path;
 use std::str::FromStr;
 use which::which;
 
+// Because the User_Agent field has to be the same every time you wield a RedGifs token,
+//   we can use this static block to pass hash checks.
+// todo: Combine this with the get_user_agent_string() function to make a single random agent string.
 static LOC_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15";
+// This is the RedGifs API endpoint to call to fetch an authentication token
 static RG_API_URL: &str = "https://api.redgifs.com/v2/auth/temporary";
+// This is the one we'll call to pull the JSON location of the actual content
 static RG_GIFLOC_URL: &str = "https://api.redgifs.com/v2/gifs";
 
 //static REDGIFS_DOMAIN: &str = "redgifs.com";
@@ -57,7 +59,7 @@ pub fn mask_sensitive(word: &str) -> String {
 }
 
 /// Since we had to convert the set of subreddits into a vec, we'll coerce them
-///   back into an Option.
+///   back into an Option. There's a more elegant way to do this, I'm sure of it.
 pub fn coerce_subreddits(subreddits: Vec<&str>) -> Option<Vec<&str>> {
     if subreddits.len() > 0 && subreddits[0] != "" {
         Some(subreddits)
@@ -99,9 +101,12 @@ pub async fn check_url_is_mp4(url: &str) -> Result<Option<bool>, ReddSaverError>
     }
 }
 
-/// New RedGifs API requires fetching an auth token first
+/// New RedGifs API requires fetching an auth token first, which is probably their way
+///   of blocking mass content downloads and scrapers. Tokens seem to be good for two
+///   weeks or so — this function grabs one and hands it back so that other things can
+///   wield it. It's important to note that the browser User_Agent field has to match
+///   when wielding the token — hence the use of a constant for that value.
 pub async fn fetch_redgif_token() -> Result<String, ReddSaverError> {
-    //let user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15";
     let response = reqwest::Client::new()
         .get(RG_API_URL)
         .header("User-Agent", LOC_AGENT)
@@ -116,12 +121,21 @@ pub async fn fetch_redgif_token() -> Result<String, ReddSaverError> {
     Ok(fulltoken.to_string())
 }
 
+/// Fetching content from RedGifs is a circus of back and forth. You have to fetch an
+///   auth token first (see fetch_redgif_token), then you use that token to call the API
+///   which gives you a JSON blob that, when decoded, gives you the URL to fetch the actual
+///   media from...all of which require using the same token and User_Agent field for every call.
+/// It's creative, I'll give them that!
 pub async fn fetch_redgif_url(rg_token: &str, orig_url: &str) -> reqwest::Result<reqwest::Response> {
     debug!("Original URL: {}", orig_url);
     let rex: &str;
+    // Redgifs seems to have two url styles from saved posts:
     if orig_url.contains("?") {
+        // This matches thumbs44.redgifs.com/ThisIsATokenName-mobile.mp4?hash=foo&thing=other
+        //   (I think these are older)
         rex = r".*redgifs.com*\/(?P<token>[a-zA-Z0-9]+)\-.*\.[mp4gif]+\?.*";
     } else {
+        // This matches newer(?) thumbs44.redgifs.com/watch/thisisatokenname
         rex = r".*redgifs.com*\/[a-zA-Z0-9]+\/(?P<token>[a-z]+)";
     }
     let re = regex::Regex::new(&rex).unwrap();
@@ -132,11 +146,9 @@ pub async fn fetch_redgif_url(rg_token: &str, orig_url: &str) -> reqwest::Result
 
     let title = caps.name("token").map_or("", |m| m.as_str());
     debug!("Token: {}", title);
-    //let extension = caps.name("ext").map_or("", |n| n.as_str());
-    // So now we've gone from the original url to 'whisperedfunbunny'
+    // So now we've gone from the original url to just 'thisisatokenname'
     let gifloc = format!("{}/{}", RG_GIFLOC_URL, &title.to_lowercase());
     debug!("Gifloc: {}", gifloc);
-    // let rgtoken = fetch_redgif_token().await.unwrap();
     debug!("RGToken: {}", rg_token);
     let response = match reqwest::Client::new()
     .get(&gifloc)
@@ -149,16 +161,23 @@ pub async fn fetch_redgif_url(rg_token: &str, orig_url: &str) -> reqwest::Result
         }
         Err(e) => return Err(e)
     };
-    // debug!("URL Response: {:#?}", response);
     debug!("Response for {}: {}", &gifloc, &response.as_str());
     let resp_data: Value = match serde_json::from_str(&response) {
         Ok(t) => t,
         Err(t) => panic!("{} - No parseable json for {} at {}", t, orig_url, &response)
     };
+    // Now we can finally grab the location of the HD-MP4 version of the video!
     let final_url = match resp_data["gif"]["urls"]["hd"].as_str() {
         Some(x) => x,
+        // This keeps us from panicking if we get back an error — RG likes to return 200 OK
+        //   and then hand you an Error JSON indicating the file is gone. Our calling
+        //   function expects a reqwest::Response object and you can't create a reqwest::Error
+        //   object by hand because...reasons? I don't know, seems silly. Hence this solution:
+        //   make it create a request to something that should fail, which will properly return
+        //   an error to the outer calling function.
+        //
+        // Yes, it's a kluge. Such is life.
         None => "http://127.0.0.1/invalid"
-        // None => panic!("No gif json found at {} for {:#?}", orig_url, resp_data),
     };
     reqwest::Client::new()
     .get(final_url)

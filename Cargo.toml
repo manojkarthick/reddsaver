@@ -1,13 +1,13 @@
 [package]
 name = "reddsaver"
 version = "0.4.0"
-authors = ["Manoj Karthick Selva Kumar <manojkarthick@ymail.com>"]
+authors = ["Orig - Manoj Karthick Selva Kumar <manojkarthick@ymail.com>", "Update - Castillar <castillar@melete.org>"]
 description = "CLI tool to download saved media from Reddit"
 edition = "2018"
 license = "MIT/Apache-2.0"
 readme = "README.md"
-homepage = "https://github.com/manojkarthick/reddsaver"
-repository = "https://github.com/manojkarthick/reddsaver"
+homepage = "https://github.com/castillar/reddsaver"
+repository = "https://github.com/castillar/reddsaver"
 keywords = ["cli", "reddit", "images"]
 categories = ["command-line-utilities"]
 

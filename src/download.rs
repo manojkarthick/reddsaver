@@ -51,6 +51,9 @@ static GIPHY_MEDIA_SUBDOMAIN_2: &str = "media2.giphy.com";
 static GIPHY_MEDIA_SUBDOMAIN_3: &str = "media3.giphy.com";
 static GIPHY_MEDIA_SUBDOMAIN_4: &str = "media4.giphy.com";
 
+// Rather than slam the authentication endpoint for a new token every time,
+//   we can set one with this function the first time we need it, and then it'll
+//   be available as a const for everything else that needs one.
 lazy_static!{
     static ref RG_TOKEN : AsyncOnce<String> = AsyncOnce::new(async {
         let rgtoken = fetch_redgif_token().await.unwrap();
@@ -224,12 +227,10 @@ impl<'a> Downloader<'a> {
                                     && !extension.ends_with(".mp4") {
                                     extension = format!("{}.{}", extension, "mp4");
                                 }
+                                // Turns out if we're calling the RG API, we always get the MP4 version now,
+                                //   so there's no need to futz with detecting the media type.
                                 if media_type == MediaType::RedgifsVideo {
-                                    // if url.contains(MP4_EXTENSION){
                                     extension = "mp4".to_string();
-                                    // } else {
-                                    //     extension = ".gif".to_string();
-                                    // }
                                 }
                                 let file_name = self.generate_file_name(
                                     &url,
@@ -432,7 +433,7 @@ async fn save_or_skip(url: &str, file_name: &str) -> Result<MediaStatus, ReddSav
     }
 }
 
-//todo!("[2023-09-06T23:19:53Z DEBUG reqwest::async_impl::client] redirecting 'https://i.imgur.com/removed.mp4' to 'https://i.imgur.com/removed.png'")
+//todo!("[reqwest::async_impl::client] redirecting 'https://i.imgur.com/removed.mp4' to 'https://i.imgur.com/removed.png'")
 
 /// Download media from the given url and save to data directory. Also create data directory if not present already
 async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverError> {
@@ -445,6 +446,8 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
         Err(_e) => return Err(ReddSaverError::CouldNotCreateDirectory),
     }
     let maybe_response: reqwest::Result<reqwest::Response>;
+    // RedGifs media requires different handling because of the chain of URLs you
+    //   have to visit and the token you have to wield the whole time.
     if url.contains(REDGIFS_DOMAIN) {
         maybe_response = fetch_redgif_url(RG_TOKEN.get().await, url).await;
     } else {
@@ -481,6 +484,8 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
 
 /// Convert Gfycat/Redgifs GIFs into mp4 URLs for download
 async fn gfy_to_mp4(url: &str) -> Result<Option<SupportedMedia>, ReddSaverError> {
+    // With the change to the GfyCat const (see above), this is mostly irrelevant to try
+    //   detecting; I'll come back and weed it out later. Probably.
     let api_prefix =
         if url.contains(GFYCAT_DOMAIN) { GFYCAT_API_PREFIX } else { REDGIFS_API_PREFIX };
     let maybe_media_id = url.split("/").last();
@@ -674,27 +679,12 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
         // split redgifs to its own handler
         if url.contains(REDGIFS_DOMAIN) {
             debug!("Found RG url {}", url);
+            // we're going to pull the 'hd' link no matter what, so the extension doesn't matter
             let supported_media = SupportedMedia {
                 components: vec![String::from(url)],
                 media_type: MediaType::RedgifsVideo,
             };
             media.push(supported_media);
-            // we're going to pull the 'hd' link no matter what, so the extension doesn't matter
-            // if url.contains(MP4_EXTENSION) {
-            //     let supported_media = SupportedMedia {
-            //         components: vec![String::from(url)],
-            //         media_type: MediaType::RedgifsVideo,
-            //     };
-            //     media.push(supported_media);
-            // } else {
-            //     // if the provided link is a gfycat post link, use the gfycat API
-            //     // to get the URL. gfycat likes to use lowercase names in their posts
-            //     // but the ID for the GIF is Pascal-cased. The case-conversion info
-            //     // can only be obtained from the API at the moment
-            //     if let Some(supported_media) = gfy_to_mp4(url).await? {
-            //         media.push(supported_media);
-            //     }
-            // }
         }
 
         // giphy

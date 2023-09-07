@@ -21,9 +21,11 @@ mod utils;
 
 #[tokio::main]
 async fn main() -> Result<(), ReddSaverError> {
+    // Thanks to clap changes, a whole bunch of the field processing needed TLC below.
+    //   Hope I did it right...
     let matches = Command::new("ReddSaver")
         .version(crate_version!())
-        .author("Manoj Karthick Selva Kumar")
+        .author("Original author: Manoj Karthick Selva Kumar")
         .about("Simple CLI tool to download saved media from Reddit")
         .arg(
             Arg::new("environment")
@@ -100,12 +102,14 @@ async fn main() -> Result<(), ReddSaverError> {
         )
         .get_matches();
 
-    // let env_file = matches.value_of("environment").unwrap();
+    // Regrettably, clap changed its function calls around, so these required some TLC
+    //   to get working again.
+    // OLD: let env_file = matches.value_of("environment").unwrap();
     let env_file = matches.get_one::<String>("environment").unwrap();
     let data_directory = matches.get_one::<String>("data_directory").unwrap();
-    // let data_directory = String::from(matches.value_of("data_directory").unwrap());
+    // OLD: let data_directory = String::from(matches.value_of("data_directory").unwrap());
     // generate the URLs to download from without actually downloading the media
-    // let should_download = !matches.is_present("dry_run");
+    // OLD: let should_download = !matches.is_present("dry_run");
     let should_download = !matches.get_flag("dry_run");
     // check if ffmpeg is present for combining video streams
     let ffmpeg_available = application_present(String::from("ffmpeg"));
@@ -113,23 +117,19 @@ async fn main() -> Result<(), ReddSaverError> {
     // let use_human_readable = matches.is_present("human_readable");
     let use_human_readable = matches.get_flag("human_readable");
     // restrict downloads to these subreddits
+    //   The extra match layer ensures that we don't explode if there are no subreddits specified.
     let subreddits = match matches
         .get_many::<String>("subreddits")
         {
             Some(t) => t.map(|v| v.as_str()).collect::<Vec<_>>(),
             None => vec!(""),
         };
-    // let subreddits: Option<Vec<&str>> = if matches.is_present("subreddits") {
-    //     Some(matches.values_of("subreddits").unwrap().collect())
-    // } else {
-    //     None
-    // };
     let upvoted = matches.get_flag("upvoted");
-    // let upvoted = matches.is_present("upvoted");
+    // OLD: let upvoted = matches.is_present("upvoted");
     let listing_type = if upvoted { &ListingType::Upvoted } else { &ListingType::Saved };
 
     let undo = matches.get_flag("undo");
-    // let undo = matches.is_present("undo");
+    // OLD: let undo = matches.is_present("undo");
 
     // initialize environment from the .env file
     dotenv::from_filename(env_file).ok();
@@ -148,7 +148,9 @@ async fn main() -> Result<(), ReddSaverError> {
         return Err(DataDirNotFound);
     }
 
-    let subs = coerce_subreddits(subreddits);
+    // we had to unwrap the subreddits list in order to muck with it above
+    //   but the below code wants an Option. So, it gets an Option.
+    let subs: Option<Vec<&str>> = coerce_subreddits(subreddits);
 
     // if the option is show-config, show the configuration and return immediately
     if matches.get_flag("show_config") {
