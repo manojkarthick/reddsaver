@@ -36,7 +36,9 @@ static IMGUR_DOMAIN: &str = "imgur.com";
 static IMGUR_SUBDOMAIN: &str = "i.imgur.com";
 
 static GFYCAT_DOMAIN: &str = "gfycat.com";
-static GFYCAT_API_PREFIX: &str = "https://api.gfycat.com/v1/gfycats";
+// Although GFYCat is no more, it turns out their API calls still work from redgifs.com...
+//   ...for now.
+static GFYCAT_API_PREFIX: &str = "https://api.redgifs.com/v1/gfycats";
 
 static REDGIFS_DOMAIN: &str = "redgifs.com";
 static REDGIFS_API_PREFIX: &str = "https://api.redgifs.com/v1/gfycats";
