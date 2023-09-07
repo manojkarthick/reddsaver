@@ -118,7 +118,13 @@ pub async fn fetch_redgif_token() -> Result<String, ReddSaverError> {
 
 pub async fn fetch_redgif_url(rg_token: &str, orig_url: &str) -> reqwest::Result<reqwest::Response> {
     debug!("Original URL: {}", orig_url);
-    let re = regex::Regex::new(r".*redgifs.com*\/[a-zA-Z0-9]+\/(?P<token>[a-z]+)").unwrap();
+    let rex: &str;
+    if orig_url.contains("?") {
+        rex = r".*redgifs.com*\/(?P<token>[a-zA-Z0-9]+)\-.*\.[mp4gif]+\?.*";
+    } else {
+        rex = r".*redgifs.com*\/[a-zA-Z0-9]+\/(?P<token>[a-z]+)";
+    }
+    let re = regex::Regex::new(&rex).unwrap();
     let caps = match re.captures(orig_url) {
         Some(t) => t,
         None => panic!("Match error on URL {}", orig_url)
