@@ -39,4 +39,6 @@ pub enum ReddSaverError {
     ToStringConversionError(#[from] ToStrError),
     #[error("Could not convert from string")]
     FromStringConversionError(#[from] FromStrError),
+    #[error("Invalid argument: {0}")]
+    InvalidArgument(String),
 }

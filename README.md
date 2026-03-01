@@ -1,6 +1,6 @@
 # Reddsaver ![build](https://github.com/manojkarthick/reddsaver/workflows/build/badge.svg) [![Crates.io](https://img.shields.io/crates/v/reddsaver.svg)](https://crates.io/crates/reddsaver)
 
-Command line tool to download saved/upvoted media from Reddit.
+Command line tool to download saved, upvoted, or subreddit feed media from Reddit.
 
 **Supported sources:**
 | Source | Media types |
@@ -118,16 +118,34 @@ mkdir -pv data/
 # Verify the configuration is correct
 reddsaver -e reddsaver.env -d data --show-config
 
-# Download saved media
+# Download saved media (default)
 reddsaver -e reddsaver.env -d data
 
 # Download upvoted media instead
-reddsaver -e reddsaver.env -d data --upvoted
+reddsaver -e reddsaver.env -d data --mode upvoted
+
+# Download from a subreddit's hot feed (default listing type, limit 500)
+reddsaver -e reddsaver.env -d data --mode feed --subreddits pics
+
+# Download top posts of the week from multiple subreddits (500 per subreddit)
+reddsaver -e reddsaver.env -d data --mode feed --subreddits pics,aww --listing-type top --time-filter week --limit 500
+
+# Download new posts from a subreddit
+reddsaver -e reddsaver.env -d data --mode feed --subreddits earthporn --listing-type new
+
+# Download a subreddit's best feed
+reddsaver -e reddsaver.env -d data --mode feed --subreddits pics --listing-type best
+
+# Download rising posts from a subreddit
+reddsaver -e reddsaver.env -d data --mode feed --subreddits pics --listing-type rising
+
+# Limit saved/upvoted downloads
+reddsaver -e reddsaver.env -d data --limit 200
 
 # Dry run — print URLs without downloading
 reddsaver -e reddsaver.env -d data --dry-run
 
-# Restrict to specific subreddits
+# Restrict saved/upvoted downloads to specific subreddits
 reddsaver -e reddsaver.env -d data --subreddits pics,aww,videos
 ```
 
@@ -136,25 +154,46 @@ On subsequent runs, files that already exist in the data directory are skipped a
 ## Command line reference
 
 ```
-ReddSaver 1.0.0
-Manoj Karthick Selva Kumar
 Simple CLI tool to download saved media from Reddit
 
-USAGE:
-    reddsaver [FLAGS] [OPTIONS]
+Usage: reddsaver [OPTIONS]
 
-FLAGS:
-    -r, --dry-run       Dry run and print the URLs of saved media to download
-    -h, --help          Prints help information
-    -s, --show-config   Show the current config being used
-    -u, --upvoted       Download media from upvoted posts
-    -V, --version       Prints version information
-
-OPTIONS:
-    -d, --data-dir <DATA_DIR>           Directory to save the media to [default: data]
-    -e, --from-env <ENV_FILE>           Set a custom .env style file with secrets [default: .env]
-    -S, --subreddits <SUBREDDITS>...    Download media from these subreddits only
+Options:
+  -e, --from-env <ENV_FILE>      Set a custom .env style file with secrets [default: .env]
+  -d, --data-dir <DATA_DIR>      Directory to save the media to [default: data]
+  -s, --show-config              Show the current config being used
+  -r, --dry-run                  Dry run and print the URLs of saved media to download
+  -S, --subreddits <SUBREDDITS>  Subreddits to filter (saved/upvoted) or fetch from (feed mode)
+  -m, --mode <MODE>              Operation mode [default: saved] [possible values: saved, upvoted, feed]
+  -t, --listing-type <TYPE>      Subreddit listing sort [default: hot] [possible values: hot, best, rising, top, new, controversial]
+  -T, --time-filter <PERIOD>     Time period for top/controversial listings [default: all] [possible values: hour, day, week, month, year, all]
+  -l, --limit <LIMIT>            Max posts to process per source (default: unlimited for saved/upvoted, 500 for feed)
+  -h, --help                     Print help
+  -V, --version                  Print version
 ```
+
+### Modes
+
+| Mode | Flag | Description |
+|------|------|-------------|
+| `saved` | `--mode saved` (default) | Download media from your saved posts |
+| `upvoted` | `--mode upvoted` | Download media from your upvoted posts |
+| `feed` | `--mode feed` | Download media from a subreddit's listing feed |
+
+### Feed mode options
+
+`--listing-type` and `--time-filter` are only valid with `--mode feed`. `--subreddits` is required in feed mode and specifies which subreddit(s) to fetch from. The `--limit` defaults to **500 per subreddit**.
+
+| Listing type | Time filter applies? | Description |
+|---|---|---|
+| `hot` (default) | No | Currently trending posts |
+| `best` | No | Reddit's best-ranked posts for the subreddit |
+| `rising` | No | Posts currently gaining traction in the subreddit |
+| `top` | Yes | Highest-scoring posts in the given time period |
+| `new` | No | Most recently submitted posts |
+| `controversial` | Yes | Most controversial posts in the given time period |
+
+Time filter values for `top` and `controversial`: `hour`, `day`, `week`, `month`, `year`, `all` (default `all`). If `--time-filter` is passed with `hot`, `best`, `rising`, or `new`, the value is ignored.
 
 ## File naming
 
@@ -182,6 +221,18 @@ Given any file downloaded by reddsaver, prints the subreddit, username, and a di
 # Subreddit: aww
 # Username:  thunderbird42
 # Post link: https://www.reddit.com/r/aww/comments/abc123/
+```
+
+### download_top_presets.sh
+
+Runs a common set of `top` downloads for a single subreddit:
+- `all` with limit `1000`
+- `year` with limit `500`
+- `month` with limit `250`
+- `day` with limit `25`
+
+```shell
+./scripts/download_top_presets.sh --env-file zzxx.env --subreddit SkinnyWithAbs --data-dir ~/Downloads/Reddit
 ```
 
 ## Download summary
