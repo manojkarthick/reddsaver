@@ -144,7 +144,6 @@ FLAGS:
     -r, --dry-run       Dry run and print the URLs of saved media to download
     -h, --help          Prints help information
     -s, --show-config   Show the current config being used
-    -U, --undo          Unsave or remove upvote for post after processing
     -u, --upvoted       Download media from upvoted posts
     -V, --version       Prints version information
 
