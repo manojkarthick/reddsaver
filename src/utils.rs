@@ -86,8 +86,10 @@ pub async fn fetch_redgif_token() -> Result<String, ReddSaverError> {
     Ok(format!("Bearer {}", token))
 }
 
-/// Resolve a RedGifs URL to the actual HD mp4 response using the v2 API
-pub async fn fetch_redgif_url(rg_token: &str, orig_url: &str) -> reqwest::Result<reqwest::Response> {
+/// Resolve a RedGifs URL to the actual HD mp4 response using the v2 API.
+/// Returns Ok(None) if the gif is unavailable (deleted or private), with a
+/// warning already emitted — the caller should skip without further logging.
+pub async fn fetch_redgif_url(rg_token: &str, orig_url: &str) -> Result<Option<reqwest::Response>, ReddSaverError> {
     // RedGifs has two URL styles:
     //   older: thumbs44.redgifs.com/Token-mobile.mp4?hash=…
     //   newer: thumbs44.redgifs.com/watch/tokenname  OR  redgifs.com/watch/tokenname
@@ -122,17 +124,18 @@ pub async fn fetch_redgif_url(rg_token: &str, orig_url: &str) -> reqwest::Result
         Some(u) => u.to_string(),
         None => {
             warn!("Skipping RedGifs URL {}: no HD URL in API response (gif may be deleted or private)", orig_url);
-            return client.get("http://127.0.0.1/invalid").send().await;
+            return Ok(None);
         }
     };
     debug!("RedGifs HD URL: {}", hd_url);
 
-    client
+    let response = client
         .get(&hd_url)
         .header("User-Agent", LOC_AGENT)
         .header("Authorization", rg_token)
         .send()
-        .await
+        .await?;
+    Ok(Some(response))
 }
 
 /// Check if the given URL contains an MP4 track using the content type

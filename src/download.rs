@@ -658,43 +658,52 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
         Err(_e) => return Err(ReddSaverError::CouldNotCreateDirectory),
     }
 
-    let maybe_response: reqwest::Result<reqwest::Response> = if url.contains(REDGIFS_DOMAIN) {
-        fetch_redgif_url(RG_TOKEN.get().await, url).await
+    let maybe_response: Option<reqwest::Response> = if url.contains(REDGIFS_DOMAIN) {
+        // fetch_redgif_url returns None (with a warning already emitted) when the
+        // gif is unavailable; propagate any hard errors with `?`
+        match fetch_redgif_url(RG_TOKEN.get().await, url).await? {
+            Some(r) => Some(r),
+            None => return Ok(false),
+        }
     } else {
-        reqwest::get(url).await
+        match reqwest::get(url).await {
+            Ok(r) => Some(r),
+            Err(e) => {
+                warn!("Skipping {}: request failed ({})", url, e);
+                None
+            }
+        }
     };
-    if let Ok(response) = maybe_response {
+    if let Some(response) = maybe_response {
         debug!("URL Response: {:#?}", response);
         if !response.status().is_success() {
             warn!("Skipping {}: server returned HTTP {}", url, response.status());
         } else {
-        let maybe_data = response.bytes().await;
-        if let Ok(data) = maybe_data {
-            debug!("Bytes length of the data: {:#?}", data.len());
-            let maybe_output = File::create(&file_name);
-            match maybe_output {
-                Ok(mut output) => {
-                    debug!("Created a file: {}", file_name);
-                    match io::copy(&mut data.as_ref(), &mut output) {
-                        Ok(_) => {
-                            info!("Successfully saved media: {} from url {}", file_name, url);
-                            status = true;
-                        }
-                        Err(_e) => {
-                            error!("Could not save media from url {} to {}", url, file_name);
+            let maybe_data = response.bytes().await;
+            if let Ok(data) = maybe_data {
+                debug!("Bytes length of the data: {:#?}", data.len());
+                let maybe_output = File::create(&file_name);
+                match maybe_output {
+                    Ok(mut output) => {
+                        debug!("Created a file: {}", file_name);
+                        match io::copy(&mut data.as_ref(), &mut output) {
+                            Ok(_) => {
+                                info!("Successfully saved media: {} from url {}", file_name, url);
+                                status = true;
+                            }
+                            Err(_e) => {
+                                error!("Could not save media from url {} to {}", url, file_name);
+                            }
                         }
                     }
+                    Err(_) => {
+                        warn!("Could not create a file with the name: {}. Skipping", file_name);
+                    }
                 }
-                Err(_) => {
-                    warn!("Could not create a file with the name: {}. Skipping", file_name);
-                }
+            } else {
+                warn!("Skipping {}: could not read response body", url);
             }
-        } else {
-            warn!("Skipping {}: could not read response body", url);
         }
-        } // end else (status is success)
-    } else {
-        warn!("Skipping {}: request failed ({})", url, maybe_response.unwrap_err());
     }
 
     Ok(status)
