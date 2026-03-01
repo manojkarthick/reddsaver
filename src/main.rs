@@ -253,7 +253,7 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
 
     info!("Starting data gathering from Reddit. This might take some time. Hold on....");
 
-    let (listing, downloader_subreddits) = match mode {
+    let listing = match &mode {
         Mode::Feed => {
             let subreddits_list = subreddits.as_ref().unwrap();
             let limit = effective_limit.unwrap(); // always Some in feed mode
@@ -264,25 +264,24 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
                     user.subreddit_listing(sub, &listing_type, period, limit).await?;
                 all_listings.append(&mut sub_listing);
             }
-            // subreddits filter not needed — we already fetched per-subreddit
-            (all_listings, None)
+            all_listings
         }
-        Mode::Saved => {
-            let listing = user.listing(&ListingType::Saved, effective_limit).await?;
-            (listing, subreddits)
-        }
-        Mode::Upvoted => {
-            let listing = user.listing(&ListingType::Upvoted, effective_limit).await?;
-            (listing, subreddits)
-        }
+        Mode::Saved => user.listing(&ListingType::Saved, effective_limit).await?,
+        Mode::Upvoted => user.listing(&ListingType::Upvoted, effective_limit).await?,
     };
 
     debug!("Posts: {:#?}", listing);
 
+    // In feed mode subreddits were used as sources; no further filtering is needed
+    let subreddit_filter = match mode {
+        Mode::Feed => None,
+        _ => subreddits,
+    };
+
     let downloader = Downloader::new(
         &listing,
         &data_directory,
-        &downloader_subreddits,
+        &subreddit_filter,
         should_download,
         ffmpeg_available,
         ytdlp_available,
