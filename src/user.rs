@@ -142,23 +142,20 @@ impl<'a> User<'a> {
             // during the first call to the API, we would not provide the after query parameter
             // in subsequent calls, we use the value for after from the response of the
             //  previous request and continue doing so till the value of after is null
-            let url = if processed == 0 {
-                format!("https://oauth.reddit.com/user/{}/{}", self.name, listing_type.to_string())
-            } else {
-                format!(
-                    "https://oauth.reddit.com/user/{}/{}?after={}",
-                    self.name,
-                    listing_type.to_string(),
-                    after.as_ref().unwrap()
-                )
-            };
+            let base_url = format!("https://oauth.reddit.com/user/{}/{}", self.name, listing_type.to_string());
 
-            let mut response = client
-                .get(&url)
+            let mut request = client
+                .get(&base_url)
                 .bearer_auth(&self.auth.access_token)
                 .header(USER_AGENT, get_user_agent_string(None, None))
                 // the maximum number of items returned by the API in a single request is 100
-                .query(&[("limit", 100)])
+                .query(&[("limit", "100")]);
+
+            if let Some(ref a) = after {
+                request = request.query(&[("after", a)]);
+            }
+
+            let mut response = request
                 .send()
                 .await?
                 .json::<Listing>()
@@ -181,14 +178,22 @@ impl<'a> User<'a> {
             let hit_limit = limit.map(|cap| processed >= cap).unwrap_or(false);
 
             // if there is a response, continue collecting them into a vector
-            if response.data.after.as_ref().is_none() || hit_limit {
-                info!("Data gathering complete. Yay.");
-                listing.push(response);
-                complete = true;
-            } else {
-                debug!("Processing till: {}", response.data.after.as_ref().unwrap());
-                after = response.data.after.clone();
-                listing.push(response);
+            match response.data.after {
+                None => {
+                    info!("Data gathering complete. Yay.");
+                    listing.push(response);
+                    complete = true;
+                }
+                Some(ref next) if !hit_limit => {
+                    debug!("Processing till: {}", next);
+                    after = Some(next.clone());
+                    listing.push(response);
+                }
+                _ => {
+                    info!("Data gathering complete. Yay.");
+                    listing.push(response);
+                    complete = true;
+                }
             }
         }
 
@@ -215,22 +220,17 @@ impl<'a> User<'a> {
         let mut listing: Vec<Listing> = Vec::new();
 
         while !complete {
-            let base_url = if processed == 0 {
-                format!("https://oauth.reddit.com/r/{}/{}", subreddit, sort)
-            } else {
-                format!(
-                    "https://oauth.reddit.com/r/{}/{}?after={}",
-                    subreddit,
-                    sort,
-                    after.as_ref().unwrap()
-                )
-            };
+            let base_url = format!("https://oauth.reddit.com/r/{}/{}", subreddit, sort);
 
             let mut request = client
                 .get(&base_url)
                 .bearer_auth(&self.auth.access_token)
                 .header(USER_AGENT, get_user_agent_string(None, None))
                 .query(&[("limit", "100")]);
+
+            if let Some(ref a) = after {
+                request = request.query(&[("after", a)]);
+            }
 
             // top and controversial support an optional time period filter
             if let Some(p) = period {
@@ -256,14 +256,22 @@ impl<'a> User<'a> {
 
             let hit_limit = processed >= limit;
 
-            if response.data.after.as_ref().is_none() || hit_limit {
-                info!("Data gathering complete for r/{}.", subreddit);
-                listing.push(response);
-                complete = true;
-            } else {
-                debug!("Processing till: {}", response.data.after.as_ref().unwrap());
-                after = response.data.after.clone();
-                listing.push(response);
+            match response.data.after {
+                None => {
+                    info!("Data gathering complete for r/{}.", subreddit);
+                    listing.push(response);
+                    complete = true;
+                }
+                Some(ref next) if !hit_limit => {
+                    debug!("Processing till: {}", next);
+                    after = Some(next.clone());
+                    listing.push(response);
+                }
+                _ => {
+                    info!("Data gathering complete for r/{}.", subreddit);
+                    listing.push(response);
+                    complete = true;
+                }
             }
         }
 
@@ -291,18 +299,10 @@ impl<'a> User<'a> {
         let mut listing: Vec<Listing> = Vec::new();
 
         while !complete {
-            let base_url = if processed == 0 {
-                format!(
-                    "https://oauth.reddit.com/user/{}/submitted",
-                    target_user
-                )
-            } else {
-                format!(
-                    "https://oauth.reddit.com/user/{}/submitted?after={}",
-                    target_user,
-                    after.as_ref().unwrap()
-                )
-            };
+            let base_url = format!(
+                "https://oauth.reddit.com/user/{}/submitted",
+                target_user
+            );
 
             let mut request = client
                 .get(&base_url)
@@ -310,6 +310,10 @@ impl<'a> User<'a> {
                 .header(USER_AGENT, get_user_agent_string(None, None))
                 .query(&[("limit", "100")])
                 .query(&[("sort", sort.to_string())]);
+
+            if let Some(ref a) = after {
+                request = request.query(&[("after", a)]);
+            }
 
             if let Some(p) = period {
                 match sort {
@@ -337,17 +341,22 @@ impl<'a> User<'a> {
 
             let hit_limit = processed >= limit;
 
-            if response.data.after.as_ref().is_none() || hit_limit {
-                info!("Data gathering complete for u/{}.", target_user);
-                listing.push(response);
-                complete = true;
-            } else {
-                debug!(
-                    "Processing till: {}",
-                    response.data.after.as_ref().unwrap()
-                );
-                after = response.data.after.clone();
-                listing.push(response);
+            match response.data.after {
+                None => {
+                    info!("Data gathering complete for u/{}.", target_user);
+                    listing.push(response);
+                    complete = true;
+                }
+                Some(ref next) if !hit_limit => {
+                    debug!("Processing till: {}", next);
+                    after = Some(next.clone());
+                    listing.push(response);
+                }
+                _ => {
+                    info!("Data gathering complete for u/{}.", target_user);
+                    listing.push(response);
+                    complete = true;
+                }
             }
         }
 

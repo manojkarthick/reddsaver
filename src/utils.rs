@@ -1,13 +1,22 @@
 use crate::errors::ReddSaverError;
+use lazy_static::lazy_static;
 use log::{debug, warn};
 use mime::Mime;
 use rand::Rng;
 use random_names::RandomName;
+use regex::Regex;
 use reqwest::header::CONTENT_TYPE;
 use serde_json::Value;
 use std::path::Path;
 use std::str::FromStr;
 use which::which;
+
+lazy_static! {
+    static ref RG_RE_OLD: Regex =
+        Regex::new(r"/([A-Za-z]+)-mobile\.mp4").expect("valid regex");
+    static ref RG_RE_NEW: Regex =
+        Regex::new(r"/(?:watch/)?([A-Za-z]+)(?:[^/]*)$").expect("valid regex");
+}
 
 // RedGifs requires the same User-Agent for both token fetch and media fetch calls
 static LOC_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15";
@@ -77,7 +86,10 @@ pub async fn fetch_redgif_token() -> Result<String, ReddSaverError> {
         .await?
         .text()
         .await?;
-    let resp_data: Value = serde_json::from_str(&response).unwrap();
+    let resp_data: Value = serde_json::from_str(&response)
+        .map_err(|e| ReddSaverError::CouldNotSaveImageError(
+            format!("Failed to parse RedGifs token response: {}", e),
+        ))?;
     let tok_val = resp_data["token"].as_str();
     let token = match tok_val {
         Some(t) => t,
@@ -96,12 +108,9 @@ pub async fn fetch_redgif_url(
     // RedGifs has two URL styles:
     //   older: thumbs44.redgifs.com/Token-mobile.mp4?hash=…
     //   newer: thumbs44.redgifs.com/watch/tokenname  OR  redgifs.com/watch/tokenname
-    let re_old = regex::Regex::new(r"/([A-Za-z]+)-mobile\.mp4").unwrap();
-    let re_new = regex::Regex::new(r"/(?:watch/)?([A-Za-z]+)(?:[^/]*)$").unwrap();
-
-    let gif_id = if let Some(caps) = re_old.captures(orig_url) {
+    let gif_id = if let Some(caps) = RG_RE_OLD.captures(orig_url) {
         caps[1].to_string()
-    } else if let Some(caps) = re_new.captures(orig_url) {
+    } else if let Some(caps) = RG_RE_NEW.captures(orig_url) {
         caps[1].to_string()
     } else {
         String::new()

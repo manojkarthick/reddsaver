@@ -24,7 +24,7 @@ mod utils;
 async fn main() -> ExitCode {
     let matches = cli().get_matches();
     let env_file =
-        String::from(matches.get_one::<String>("environment").map(|s| s.as_str()).unwrap());
+        String::from(matches.get_one::<String>("environment").map_or(".env", |s| s.as_str()));
 
     let env_file_result = load_env_file(&env_file);
 
@@ -135,10 +135,10 @@ fn cli() -> Command {
 }
 
 async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
-    let env_file = matches.get_one::<String>("environment").map(|s| s.as_str()).unwrap();
+    let env_file = matches.get_one::<String>("environment").map_or(".env", |s| s.as_str());
 
     let data_directory =
-        String::from(matches.get_one::<String>("data_directory").map(|s| s.as_str()).unwrap());
+        String::from(matches.get_one::<String>("data_directory").map_or("data", |s| s.as_str()));
     // generate the URLs to download from without actually downloading the media
     let should_download = !matches.get_flag("dry_run");
     // check if ffmpeg is present for combining video streams
@@ -289,8 +289,8 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
 
     let listing = match &mode {
         Mode::Feed => {
-            let subreddits_list = subreddits.as_ref().unwrap();
-            let limit = effective_limit.unwrap(); // always Some in feed mode
+            let subreddits_list = subreddits.as_ref().expect("feed mode requires --subreddits");
+            let limit = effective_limit.expect("feed/user mode always has a limit");
             let mut all_listings = Vec::new();
             for sub in subreddits_list {
                 info!("Fetching r/{} ({}, limit {})", sub, listing_type, limit);
@@ -301,8 +301,8 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
             all_listings
         }
         Mode::User => {
-            let target = target_user.as_ref().unwrap();
-            let limit = effective_limit.unwrap();
+            let target = target_user.as_ref().expect("user mode requires --user");
+            let limit = effective_limit.expect("feed/user mode always has a limit");
             info!("Fetching submissions from u/{} ({}, limit {})", target, listing_type, limit);
             user.user_listing(target, &listing_type, period, limit).await?
         }
@@ -370,10 +370,10 @@ where
     }
 
     Ok(RequiredEnvConfig {
-        client_id: client_id.unwrap(),
-        client_secret: client_secret.unwrap(),
-        username: username.unwrap(),
-        password: password.unwrap(),
+        client_id: client_id.expect("checked above"),
+        client_secret: client_secret.expect("checked above"),
+        username: username.expect("checked above"),
+        password: password.expect("checked above"),
     })
 }
 
