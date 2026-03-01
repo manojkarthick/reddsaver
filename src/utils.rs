@@ -47,7 +47,7 @@ pub fn check_path_present(file_path: &str) -> bool {
 /// Function that masks sensitive data such as password and client secrets
 pub fn mask_sensitive(word: &str) -> String {
     let word_length = word.len();
-    return if word.is_empty() {
+    if word.is_empty() {
         // return with indication if string is empty
         String::from("<EMPTY>")
     } else if word_length > 0 && word_length <= 3 {
@@ -60,21 +60,18 @@ pub fn mask_sensitive(word: &str) -> String {
             .enumerate()
             .map(|(i, c)| if i == 0 || i == 1 || i == word_length - 1 { c } else { '*' })
             .collect()
-    };
+    }
 }
 
 /// Return delimited subreddit names or EMPTY if None
 pub fn print_subreddits(subreddits: &Option<Vec<&str>>) -> String {
-    return if let Some(s) = subreddits { s.join(",") } else { String::from("<ALL>") };
+    if let Some(s) = subreddits { s.join(",") } else { String::from("<ALL>") }
 }
 
 /// Check if the given application is present in the $PATH
 pub fn application_present(name: String) -> bool {
     let result = which(name);
-    match result {
-        Ok(_) => true,
-        _ => false,
-    }
+    result.is_ok()
 }
 
 /// Fetch a temporary bearer token from the RedGifs v2 auth endpoint

@@ -190,11 +190,7 @@ impl<'a> Downloader<'a> {
                         PostMetadata { subreddit, author: post_author, id: post_id };
 
                     let is_valid = if let Some(s) = self.subreddits.as_ref() {
-                        if s.contains(&subreddit) {
-                            true
-                        } else {
-                            false
-                        }
+                        s.contains(&subreddit)
                     } else {
                         true
                     };
@@ -327,7 +323,7 @@ impl<'a> Downloader<'a> {
     /// Helper function to download reddit videos
     async fn download_reddit_video(
         &self,
-        media_urls: &Vec<String>,
+        media_urls: &[String],
         media_type: MediaType,
         post_metadata: &PostMetadata<'_>,
     ) -> Result<(i32, i32), ReddSaverError> {
@@ -340,7 +336,7 @@ impl<'a> Downloader<'a> {
         for (index, url) in media_urls.iter().enumerate() {
             let mut item_index = format!("{}", index);
             let mut extension =
-                String::from(url.split('.').last().unwrap_or("unknown")).replace("/", "_");
+                String::from(url.split('.').next_back().unwrap_or("unknown")).replace("/", "_");
 
             // if the media is a reddit video, they have separate audio and video components.
             // to differentiate this from albums, which use the regular _0, _1, etc indices,
@@ -357,7 +353,7 @@ impl<'a> Downloader<'a> {
             {
                 extension = format!("{}.{}", extension, ".mp4");
             }
-            let file_name = self.generate_file_name(&url, &extension, &item_index, post_metadata);
+            let file_name = self.generate_file_name(url, &extension, &item_index, post_metadata);
 
             if self.should_download {
                 let status = save_or_skip(url, &file_name);
@@ -392,7 +388,7 @@ impl<'a> Downloader<'a> {
             if self.ffmpeg_available {
                 debug!("Assembling components together");
                 let first_url = media_urls.first().expect("checked len == 2");
-                let extension = String::from(first_url.split('.').last().unwrap_or("unknown"));
+                let extension = String::from(first_url.split('.').next_back().unwrap_or("unknown"));
                 // this generates the name of the media without the component indices
                 // this file name is used for saving the ffmpeg combined file
                 let combined_file_name =
@@ -454,7 +450,7 @@ impl<'a> Downloader<'a> {
             debug!("Skipping combining reddit video.");
         }
 
-        return Ok((media_downloaded, media_skipped));
+        Ok((media_downloaded, media_skipped))
     }
 
     /// Helper function to download youtube videos
@@ -468,7 +464,7 @@ impl<'a> Downloader<'a> {
 
         if self.should_download {
             if self.ytdlp_available {
-                let file_name = self.generate_file_name(&media_url, "mp4", "0", post_metadata);
+                let file_name = self.generate_file_name(media_url, "mp4", "0", post_metadata);
 
                 if check_path_present(&file_name) {
                     debug!("Youtube video from url {} already downloaded. Skipping...", media_url);
@@ -510,7 +506,7 @@ impl<'a> Downloader<'a> {
             media_skipped += 1;
         }
 
-        return Ok((media_downloaded, media_skipped));
+        Ok((media_downloaded, media_skipped))
     }
 
     /// Helper function to download other media
@@ -527,13 +523,13 @@ impl<'a> Downloader<'a> {
         let extension = if media_type == MediaType::RedgifsVideo {
             String::from("mp4")
         } else {
-            String::from(media_url.split('.').last().unwrap_or("unknown")).replace("/", "_")
+            String::from(media_url.split('.').next_back().unwrap_or("unknown")).replace("/", "_")
         };
 
-        let file_name = self.generate_file_name(&media_url, &extension, &index, post_metadata);
+        let file_name = self.generate_file_name(media_url, &extension, index, post_metadata);
 
         if self.should_download {
-            let status = save_or_skip(&*media_url, &file_name);
+            let status = save_or_skip(media_url, &file_name);
             // update the summary statistics based on the status
             match status.await? {
                 MediaStatus::Downloaded => {
@@ -548,17 +544,17 @@ impl<'a> Downloader<'a> {
             media_skipped += 1;
         }
 
-        return Ok((media_downloaded, media_skipped));
+        Ok((media_downloaded, media_skipped))
     }
 }
 
 /// Helper function that downloads and saves a single media from Reddit or Imgur
 async fn save_or_skip(url: &str, file_name: &str) -> Result<MediaStatus, ReddSaverError> {
-    if check_path_present(&file_name) {
+    if check_path_present(file_name) {
         debug!("Media from url {} already downloaded. Skipping...", url);
         Ok(MediaStatus::Skipped)
     } else {
-        let save_status = download_media(&file_name, &url).await?;
+        let save_status = download_media(file_name, url).await?;
         if save_status {
             Ok(MediaStatus::Downloaded)
         } else {
@@ -604,7 +600,7 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
             let maybe_data = response.bytes().await;
             if let Ok(data) = maybe_data {
                 debug!("Bytes length of the data: {:#?}", data.len());
-                let maybe_output = File::create(&file_name);
+                let maybe_output = File::create(file_name);
                 match maybe_output {
                     Ok(mut output) => {
                         debug!("Created a file: {}", file_name);
@@ -668,7 +664,7 @@ async fn get_reddit_video(url: &str) -> Result<Option<SupportedMedia>, ReddSaver
     if let Some(dash_video) = maybe_dash_video {
         let present = dash_video.contains("DASH");
         // todo: find exhaustive collection of these, or figure out if they are (x, x*2) pairs
-        let dash_video_only = vec!["DASH_1_2_M", "DASH_2_4_M", "DASH_4_8_M"];
+        let dash_video_only = ["DASH_1_2_M", "DASH_2_4_M", "DASH_4_8_M"];
         if present {
             return if dash_video_only.contains(&dash_video) {
                 let supported_media = SupportedMedia {
@@ -804,7 +800,7 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
                         .and_then(|mm| mm.get(&item.media_id))
                         .and_then(|v| v.get("m"))
                         .and_then(|m| m.as_str())
-                        .and_then(|mime| mime.split('/').last())
+                        .and_then(|mime| mime.split('/').next_back())
                         .map(|sub| if sub == "jpeg" { "jpg" } else { sub })
                         .unwrap_or("jpg");
                     let image_url = format!(
@@ -827,10 +823,8 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
                     media_type: MediaType::GfycatGif,
                 };
                 media.push(supported_media);
-            } else {
-                if let Some(supported_media) = gfy_to_mp4(url).await? {
-                    media.push(supported_media);
-                }
+            } else if let Some(supported_media) = gfy_to_mp4(url).await? {
+                media.push(supported_media);
             }
         }
 

@@ -41,11 +41,11 @@ impl<'a> Client<'a> {
         agent: &'a str,
     ) -> Self {
         Self {
-            client_id: &id,
-            client_secret: &secret,
-            username: &username,
-            password: &password,
-            user_agent: &agent,
+            client_id: id,
+            client_secret: secret,
+            username,
+            password,
+            user_agent: agent,
         }
     }
 
