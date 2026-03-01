@@ -43,12 +43,14 @@ static REDGIFS_DOMAIN: &str = "redgifs.com";
 static REDGIFS_API_PREFIX: &str = "https://api.redgifs.com/v1/gfycats";
 
 static GIPHY_DOMAIN: &str = "giphy.com";
-static GIPHY_MEDIA_SUBDOMAIN: &str = "media.giphy.com";
-static GIPHY_MEDIA_SUBDOMAIN_0: &str = "media0.giphy.com";
-static GIPHY_MEDIA_SUBDOMAIN_1: &str = "media1.giphy.com";
-static GIPHY_MEDIA_SUBDOMAIN_2: &str = "media2.giphy.com";
-static GIPHY_MEDIA_SUBDOMAIN_3: &str = "media3.giphy.com";
-static GIPHY_MEDIA_SUBDOMAIN_4: &str = "media4.giphy.com";
+static GIPHY_MEDIA_SUBDOMAINS: &[&str] = &[
+    "media.giphy.com",
+    "media0.giphy.com",
+    "media1.giphy.com",
+    "media2.giphy.com",
+    "media3.giphy.com",
+    "media4.giphy.com",
+];
 
 static YOUTUBE_DOMAIN: &str = "youtube.com";
 static YOUTUBE_SHORT_DOMAIN: &str = "youtu.be";
@@ -833,13 +835,7 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
         if url.contains(GIPHY_DOMAIN) {
             // giphy has multiple CDN networks named {media0, .., media5}
             // links can point to the canonical media subdomain or any content domains
-            if url.contains(GIPHY_MEDIA_SUBDOMAIN)
-                || url.contains(GIPHY_MEDIA_SUBDOMAIN_0)
-                || url.contains(GIPHY_MEDIA_SUBDOMAIN_1)
-                || url.contains(GIPHY_MEDIA_SUBDOMAIN_2)
-                || url.contains(GIPHY_MEDIA_SUBDOMAIN_3)
-                || url.contains(GIPHY_MEDIA_SUBDOMAIN_4)
-            {
+            if GIPHY_MEDIA_SUBDOMAINS.iter().any(|s| url.contains(s)) {
                 // if we encounter gif, mp4 or gifv - download as is
                 if url.ends_with(GIF_EXTENSION)
                     || url.ends_with(MP4_EXTENSION)
@@ -858,8 +854,8 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
                 let media_id = path.split("-").last().unwrap();
                 let supported_media = SupportedMedia {
                     components: vec![format!(
-                        "https://{}/media/{}.gif",
-                        GIPHY_MEDIA_SUBDOMAIN, media_id
+                        "https://media.giphy.com/media/{}.gif",
+                        media_id
                     )],
                     media_type: MediaType::GiphyGif,
                 };
