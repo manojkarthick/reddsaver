@@ -1,6 +1,6 @@
 [package]
 name = "reddsaver"
-version = "0.4.0"
+version = "1.0.0"
 authors = ["Manoj Karthick Selva Kumar <manojkarthick@ymail.com>"]
 description = "CLI tool to download saved media from Reddit"
 edition = "2021"
