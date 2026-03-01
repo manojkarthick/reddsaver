@@ -17,7 +17,7 @@ use url::{Position, Url};
 
 use crate::errors::ReddSaverError;
 use crate::structures::{GfyData, PostData};
-use crate::structures::{Listing, Summary};
+use crate::structures::{Listing, SourceStats, Summary};
 use crate::user::{ListingType, User};
 use async_once::AsyncOnce;
 
@@ -152,8 +152,7 @@ impl<'a> Downloader<'a> {
     }
 
     pub async fn run(self) -> Result<(), ReddSaverError> {
-        let mut full_summary =
-            Summary { media_downloaded: 0, media_skipped: 0, media_supported: 0 };
+        let mut full_summary = Summary::zero();
 
         for collection in self.listing {
             full_summary =
@@ -162,9 +161,23 @@ impl<'a> Downloader<'a> {
 
         info!("#####################################");
         info!("Download Summary:");
-        info!("Number of supported media: {}", full_summary.media_supported);
-        info!("Number of media downloaded: {}", full_summary.media_downloaded);
-        info!("Number of media skipped: {}", full_summary.media_skipped);
+        info!("  Total supported:  {}", full_summary.media_supported);
+        info!("  Total downloaded: {}", full_summary.media_downloaded);
+        info!("  Total skipped:    {}", full_summary.media_skipped);
+        info!("");
+        info!(
+            "  {:<24} | {:>9} | {:>10} | {:>7}",
+            "Source", "Supported", "Downloaded", "Skipped"
+        );
+        info!("  {}", "-".repeat(59));
+        let mut sources: Vec<(&String, &SourceStats)> = full_summary.by_source.iter().collect();
+        sources.sort_by_key(|(k, _)| k.as_str());
+        for (source, stats) in &sources {
+            info!(
+                "  {:<24} | {:>9} | {:>10} | {:>7}",
+                source, stats.supported, stats.downloaded, stats.skipped
+            );
+        }
         info!("#####################################");
         info!("FIN.");
 
@@ -177,11 +190,7 @@ impl<'a> Downloader<'a> {
         collection: &Listing,
         listing_type: &ListingType,
     ) -> Result<Summary, ReddSaverError> {
-        let summary = Arc::new(Mutex::new(Summary {
-            media_supported: 0,
-            media_downloaded: 0,
-            media_skipped: 0,
-        }));
+        let summary = Arc::new(Mutex::new(Summary::zero()));
 
         collection
             .data
@@ -224,10 +233,23 @@ impl<'a> Downloader<'a> {
                         for supported_media in supported_media_items {
                             let media_urls = &supported_media.components;
                             let media_type = supported_media.media_type;
+                            let num_components = media_urls.len() as i32;
+
+                            let source_label = match &media_type {
+                                MediaType::RedditImage => "Reddit Image",
+                                MediaType::RedditGif => "Reddit GIF",
+                                MediaType::RedditVideoWithAudio => "Reddit Video (with audio)",
+                                MediaType::RedditVideoWithoutAudio => "Reddit Video (no audio)",
+                                MediaType::GfycatGif => "Gfycat",
+                                MediaType::RedgifsVideo => "Redgifs",
+                                MediaType::GiphyGif => "Giphy",
+                                MediaType::ImgurImage => "Imgur Image",
+                                MediaType::ImgurGif => "Imgur GIF",
+                                MediaType::YoutubeVideo => "YouTube",
+                            };
 
                             // the number of components in the supported media is the number available for download
-                            summary_arc.lock().unwrap().media_supported +=
-                                supported_media.components.len() as i32;
+                            summary_arc.lock().unwrap().media_supported += num_components;
 
                             let media_info = match media_type {
                                 MediaType::RedditVideoWithAudio
@@ -264,8 +286,16 @@ impl<'a> Downloader<'a> {
                                 }
                             };
 
-                            summary_arc.lock().unwrap().media_downloaded += media_info.0;
-                            summary_arc.lock().unwrap().media_skipped += media_info.1;
+                            {
+                                let mut s = summary_arc.lock().unwrap();
+                                s.media_downloaded += media_info.0;
+                                s.media_skipped += media_info.1;
+                                let entry =
+                                    s.by_source.entry(source_label.to_string()).or_default();
+                                entry.supported += num_components;
+                                entry.downloaded += media_info.0;
+                                entry.skipped += media_info.1;
+                            }
                         }
                     } else {
                         debug!(
@@ -285,7 +315,7 @@ impl<'a> Downloader<'a> {
             .try_collect::<()>()
             .await?;
 
-        let local_summary = *summary.lock().unwrap();
+        let local_summary = summary.lock().unwrap().clone();
 
         debug!("Collection statistics: ");
         debug!("Number of supported media: {}", local_summary.media_supported);
