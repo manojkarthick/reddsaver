@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::ops::Add;
 
 /// Data structure that represents a user's info
@@ -41,6 +42,7 @@ pub struct UserAbout {
     pub data: AboutData,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 pub struct Listing {
     /// The kind of object this is. eg: Comment, Account, Subreddit, etc.
@@ -51,6 +53,7 @@ pub struct Listing {
 }
 
 /// The contents of a call to a 'listing' endpoint.
+#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 pub struct ListingData {
     /// A modhash (essentially a CSRF token) generated for this request. This is generally
@@ -62,6 +65,7 @@ pub struct ListingData {
     pub dist: i32,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug, Clone)]
 pub struct Post {
     /// The kind of object this is. eg: Comment, Account, Subreddit, etc.
@@ -71,9 +75,12 @@ pub struct Post {
 }
 
 /// Represents all types of link posts and self posts on Reddit.
+#[allow(dead_code)]
 #[derive(Deserialize, Debug, Clone)]
 pub struct PostData {
     pub subreddit: String,
+    /// The Reddit username of the post author.
+    pub author: String,
     /// The ID of the post in base-36 form, as used in Reddit's links.
     pub id: String,
     /// The overall points score of this post, as shown on the upvote counter. This is the
@@ -120,6 +127,7 @@ pub struct PostMedia {
     pub reddit_video: Option<RedditVideo>,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug, Clone)]
 pub struct RedditVideo {
     pub fallback_url: String,
@@ -132,6 +140,7 @@ pub struct GalleryItems {
     pub items: Vec<GalleryItem>,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug, Clone)]
 pub struct GalleryItem {
     /// The reddit media id, can be used to construct a redd.it URL
@@ -146,6 +155,7 @@ pub struct GfyData {
     pub gfy_item: GfyItem,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug, Clone)]
 pub struct GfyItem {
     #[serde(rename = "gifUrl")]
@@ -154,7 +164,15 @@ pub struct GfyItem {
     pub mp4_url: String,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+/// Per-source download statistics
+#[derive(Debug, Clone, Default)]
+pub struct SourceStats {
+    pub supported: i32,
+    pub downloaded: i32,
+    pub skipped: i32,
+}
+
+#[derive(Debug, Clone)]
 pub struct Summary {
     /// Number of media downloaded
     pub media_downloaded: i32,
@@ -162,16 +180,37 @@ pub struct Summary {
     pub media_skipped: i32,
     /// Number of media supported present and parsable
     pub media_supported: i32,
+    /// Per-source breakdown
+    pub by_source: HashMap<String, SourceStats>,
+}
+
+impl Summary {
+    pub fn zero() -> Self {
+        Self {
+            media_downloaded: 0,
+            media_skipped: 0,
+            media_supported: 0,
+            by_source: HashMap::new(),
+        }
+    }
 }
 
 impl Add for Summary {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
+        let mut by_source = self.by_source;
+        for (source, stats) in rhs.by_source {
+            let entry = by_source.entry(source).or_default();
+            entry.supported += stats.supported;
+            entry.downloaded += stats.downloaded;
+            entry.skipped += stats.skipped;
+        }
         Self {
             media_supported: self.media_supported + rhs.media_supported,
             media_downloaded: self.media_downloaded + rhs.media_downloaded,
             media_skipped: self.media_skipped + rhs.media_skipped,
+            by_source,
         }
     }
 }

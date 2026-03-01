@@ -1,6 +1,6 @@
 use std::env;
 
-use clap::{crate_version, App, Arg};
+use clap::{crate_version, Arg, ArgAction, Command};
 use env_logger::Env;
 use log::{debug, info, warn};
 
@@ -21,96 +21,84 @@ mod utils;
 
 #[tokio::main]
 async fn main() -> Result<(), ReddSaverError> {
-    let matches = App::new("ReddSaver")
+    let matches = Command::new("ReddSaver")
         .version(crate_version!())
         .author("Manoj Karthick Selva Kumar")
         .about("Simple CLI tool to download saved media from Reddit")
         .arg(
-            Arg::with_name("environment")
-                .short("e")
+            Arg::new("environment")
+                .short('e')
                 .long("from-env")
                 .value_name("ENV_FILE")
                 .help("Set a custom .env style file with secrets")
-                .default_value(".env")
-                .takes_value(true),
+                .default_value(".env"),
         )
         .arg(
-            Arg::with_name("data_directory")
-                .short("d")
+            Arg::new("data_directory")
+                .short('d')
                 .long("data-dir")
                 .value_name("DATA_DIR")
                 .help("Directory to save the media to")
-                .default_value("data")
-                .takes_value(true),
+                .default_value("data"),
         )
         .arg(
-            Arg::with_name("show_config")
-                .short("s")
+            Arg::new("show_config")
+                .short('s')
                 .long("show-config")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help("Show the current config being used"),
         )
         .arg(
-            Arg::with_name("dry_run")
-                .short("r")
+            Arg::new("dry_run")
+                .short('r')
                 .long("dry-run")
-                .takes_value(false)
+                .action(ArgAction::SetTrue)
                 .help("Dry run and print the URLs of saved media to download"),
         )
         .arg(
-            Arg::with_name("human_readable")
-                .short("H")
-                .long("human-readable")
-                .takes_value(false)
-                .help("Use human readable names for files"),
-        )
-        .arg(
-            Arg::with_name("subreddits")
-                .short("S")
+            Arg::new("subreddits")
+                .short('S')
                 .long("subreddits")
-                .multiple(true)
+                .action(ArgAction::Append)
                 .value_name("SUBREDDITS")
-                .value_delimiter(",")
-                .help("Download media from these subreddits only")
-                .takes_value(true),
+                .value_delimiter(',')
+                .help("Download media from these subreddits only"),
         )
         .arg(
-            Arg::with_name("upvoted")
-                .short("u")
-                .long("--upvoted")
-                .takes_value(false)
+            Arg::new("upvoted")
+                .short('u')
+                .long("upvoted")
+                .action(ArgAction::SetTrue)
                 .help("Download media from upvoted posts"),
         )
         .arg(
-            Arg::with_name("undo")
-                .short("U")
+            Arg::new("undo")
+                .short('U')
                 .long("undo")
-                .takes_value(false)
-                .help("Unsave or remote upvote for post after processing"),
+                .action(ArgAction::SetTrue)
+                .help("Unsave or remove upvote for post after processing"),
         )
         .get_matches();
 
-    let env_file = matches.value_of("environment").unwrap();
-    let data_directory = String::from(matches.value_of("data_directory").unwrap());
+    let env_file = matches.get_one::<String>("environment").map(|s| s.as_str()).unwrap();
+    let data_directory = String::from(matches.get_one::<String>("data_directory").map(|s| s.as_str()).unwrap());
     // generate the URLs to download from without actually downloading the media
-    let should_download = !matches.is_present("dry_run");
+    let should_download = !matches.get_flag("dry_run");
     // check if ffmpeg is present for combining video streams
     let ffmpeg_available = application_present(String::from("ffmpeg"));
-    // generate human readable file names instead of MD5 Hashed file names
-    let use_human_readable = matches.is_present("human_readable");
+    // check if yt-dlp is present on the system
+    let ytdlp_available = application_present(String::from("yt-dlp"));
     // restrict downloads to these subreddits
-    let subreddits: Option<Vec<&str>> = if matches.is_present("subreddits") {
-        Some(matches.values_of("subreddits").unwrap().collect())
-    } else {
-        None
-    };
-    let upvoted = matches.is_present("upvoted");
+    let subreddits: Option<Vec<&str>> = matches
+        .get_many::<String>("subreddits")
+        .map(|vals| vals.map(|s| s.as_str()).collect());
+    let upvoted = matches.get_flag("upvoted");
     let listing_type = if upvoted { &ListingType::Upvoted } else { &ListingType::Saved };
 
-    let undo = matches.is_present("undo");
+    let undo = matches.get_flag("undo");
 
     // initialize environment from the .env file
-    dotenv::from_filename(env_file).ok();
+    dotenvy::from_filename(env_file).ok();
 
     // initialize logger for the app and set logging level to info if no environment variable present
     let env = Env::default().filter("RS_LOG").default_filter_or("info");
@@ -127,7 +115,7 @@ async fn main() -> Result<(), ReddSaverError> {
     }
 
     // if the option is show-config, show the configuration and return immediately
-    if matches.is_present("show_config") {
+    if matches.get_flag("show_config") {
         info!("Current configuration:");
         info!("ENVIRONMENT_FILE = {}", &env_file);
         info!("DATA_DIRECTORY = {}", &data_directory);
@@ -140,6 +128,7 @@ async fn main() -> Result<(), ReddSaverError> {
         info!("UPVOTED = {}", upvoted);
         info!("UNDO = {}", undo);
         info!("FFMPEG AVAILABLE = {}", ffmpeg_available);
+        info!("YT-DLP AVAILABLE = {}", ytdlp_available);
 
         return Ok(());
     }
@@ -149,6 +138,13 @@ async fn main() -> Result<(), ReddSaverError> {
             "No ffmpeg Installation available. \
             Videos hosted by Reddit use separate video and audio streams. \
             Ffmpeg needs be installed to combine the audio and video into a single mp4."
+        );
+    }
+
+    if !ytdlp_available {
+        warn!(
+            "yt-dlp is not installed. Youtube videos will not be downloaded. \
+            Install yt-dlp (https://github.com/yt-dlp/yt-dlp)."
         );
     }
 
@@ -180,9 +176,9 @@ async fn main() -> Result<(), ReddSaverError> {
         &data_directory,
         &subreddits,
         should_download,
-        use_human_readable,
         undo,
         ffmpeg_available,
+        ytdlp_available,
     );
 
     downloader.run().await?;

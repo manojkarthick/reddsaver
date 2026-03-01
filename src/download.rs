@@ -8,16 +8,20 @@ use std::{fs, io};
 
 use futures::stream::FuturesUnordered;
 use futures::TryStreamExt;
+use lazy_static::lazy_static;
 use log::{debug, error, info, warn};
+use regex::Regex;
 use reqwest::StatusCode;
 use tempfile::tempdir;
 use url::{Position, Url};
 
 use crate::errors::ReddSaverError;
 use crate::structures::{GfyData, PostData};
-use crate::structures::{Listing, Summary};
+use crate::structures::{Listing, SourceStats, Summary};
 use crate::user::{ListingType, User};
-use crate::utils::{check_path_present, check_url_is_mp4};
+use async_once::AsyncOnce;
+
+use crate::utils::{check_path_present, check_url_is_mp4, fetch_redgif_token, fetch_redgif_url};
 
 static JPG_EXTENSION: &str = "jpg";
 static PNG_EXTENSION: &str = "png";
@@ -34,7 +38,8 @@ static IMGUR_DOMAIN: &str = "imgur.com";
 static IMGUR_SUBDOMAIN: &str = "i.imgur.com";
 
 static GFYCAT_DOMAIN: &str = "gfycat.com";
-static GFYCAT_API_PREFIX: &str = "https://api.gfycat.com/v1/gfycats";
+// GfyCat shut down Sept 2023; their v1 API calls still work via the RedGifs endpoint
+static GFYCAT_API_PREFIX: &str = "https://api.redgifs.com/v1/gfycats";
 
 static REDGIFS_DOMAIN: &str = "redgifs.com";
 static REDGIFS_API_PREFIX: &str = "https://api.redgifs.com/v1/gfycats";
@@ -47,6 +52,20 @@ static GIPHY_MEDIA_SUBDOMAIN_2: &str = "media2.giphy.com";
 static GIPHY_MEDIA_SUBDOMAIN_3: &str = "media3.giphy.com";
 static GIPHY_MEDIA_SUBDOMAIN_4: &str = "media4.giphy.com";
 
+static YOUTUBE_DOMAIN: &str = "youtube.com";
+static YOUTUBE_SHORT_DOMAIN: &str = "youtu.be";
+
+lazy_static! {
+    static ref YOUTUBE_RE: Regex =
+        Regex::new(r"^https?://youtu\.be/(?P<video_id>([\w-]+))$").unwrap();
+}
+
+lazy_static! {
+    static ref RG_TOKEN: AsyncOnce<String> = AsyncOnce::new(async {
+        fetch_redgif_token().await.unwrap()
+    });
+}
+
 /// Status of media processing
 enum MediaStatus {
     /// If we are able to successfully download the media
@@ -58,16 +77,18 @@ enum MediaStatus {
 }
 
 /// Media Types Supported
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 enum MediaType {
     RedditImage,
     RedditGif,
     RedditVideoWithAudio,
     RedditVideoWithoutAudio,
     GfycatGif,
+    RedgifsVideo,
     GiphyGif,
     ImgurImage,
     ImgurGif,
+    YoutubeVideo,
 }
 
 /// Information about supported media for downloading
@@ -87,9 +108,17 @@ pub struct Downloader<'a> {
     data_directory: &'a str,
     subreddits: &'a Option<Vec<&'a str>>,
     should_download: bool,
-    use_human_readable: bool,
     undo: bool,
     ffmpeg_available: bool,
+    ytdlp_available: bool,
+}
+
+#[derive(Debug)]
+pub struct PostMetadata<'a> {
+    subreddit: &'a str,
+    author: &'a str,
+    /// Short base-36 post ID (e.g. "abc123").
+    id: &'a str,
 }
 
 impl<'a> Downloader<'a> {
@@ -100,9 +129,9 @@ impl<'a> Downloader<'a> {
         data_directory: &'a str,
         subreddits: &'a Option<Vec<&'a str>>,
         should_download: bool,
-        use_human_readable: bool,
         undo: bool,
         ffmpeg_available: bool,
+        ytdlp_available: bool,
     ) -> Downloader<'a> {
         Downloader {
             user,
@@ -111,15 +140,14 @@ impl<'a> Downloader<'a> {
             data_directory,
             subreddits,
             should_download,
-            use_human_readable,
             undo,
             ffmpeg_available,
+            ytdlp_available,
         }
     }
 
     pub async fn run(self) -> Result<(), ReddSaverError> {
-        let mut full_summary =
-            Summary { media_downloaded: 0, media_skipped: 0, media_supported: 0 };
+        let mut full_summary = Summary::zero();
 
         for collection in self.listing {
             full_summary =
@@ -128,9 +156,23 @@ impl<'a> Downloader<'a> {
 
         info!("#####################################");
         info!("Download Summary:");
-        info!("Number of supported media: {}", full_summary.media_supported);
-        info!("Number of media downloaded: {}", full_summary.media_downloaded);
-        info!("Number of media skipped: {}", full_summary.media_skipped);
+        info!("  Total supported:  {}", full_summary.media_supported);
+        info!("  Total downloaded: {}", full_summary.media_downloaded);
+        info!("  Total skipped:    {}", full_summary.media_skipped);
+        info!("");
+        info!(
+            "  {:<24} | {:>9} | {:>10} | {:>7}",
+            "Source", "Supported", "Downloaded", "Skipped"
+        );
+        info!("  {}", "-".repeat(59));
+        let mut sources: Vec<(&String, &SourceStats)> = full_summary.by_source.iter().collect();
+        sources.sort_by_key(|(k, _)| k.as_str());
+        for (source, stats) in &sources {
+            info!(
+                "  {:<24} | {:>9} | {:>10} | {:>7}",
+                source, stats.supported, stats.downloaded, stats.skipped
+            );
+        }
         info!("#####################################");
         info!("FIN.");
 
@@ -143,11 +185,7 @@ impl<'a> Downloader<'a> {
         collection: &Listing,
         listing_type: &ListingType,
     ) -> Result<Summary, ReddSaverError> {
-        let summary = Arc::new(Mutex::new(Summary {
-            media_supported: 0,
-            media_downloaded: 0,
-            media_skipped: 0,
-        }));
+        let summary = Arc::new(Mutex::new(Summary::zero()));
 
         collection
             .data
@@ -163,10 +201,14 @@ impl<'a> Downloader<'a> {
                 // we spawn a new async task for the each of the medias to be downloaded
                 async move {
                     let subreddit = item.data.subreddit.borrow();
+                    let post_author = item.data.author.borrow();
+                    let post_id = item.data.id.borrow();
                     let post_name = item.data.name.borrow();
-                    let post_title = match item.data.title.as_ref() {
-                        Some(t) => t,
-                        None => "",
+
+                    let post_metadata = PostMetadata {
+                        subreddit,
+                        author: post_author,
+                        id: post_id,
                     };
 
                     let is_valid = if let Some(s) = self.subreddits.as_ref() {
@@ -187,130 +229,68 @@ impl<'a> Downloader<'a> {
                         for supported_media in supported_media_items {
                             let media_urls = &supported_media.components;
                             let media_type = supported_media.media_type;
-                            let mut media_files = Vec::new();
+                            let num_components = media_urls.len() as i32;
+
+                            let source_label = match &media_type {
+                                MediaType::RedditImage => "Reddit Image",
+                                MediaType::RedditGif => "Reddit GIF",
+                                MediaType::RedditVideoWithAudio => "Reddit Video (with audio)",
+                                MediaType::RedditVideoWithoutAudio => "Reddit Video (no audio)",
+                                MediaType::GfycatGif => "Gfycat",
+                                MediaType::RedgifsVideo => "Redgifs",
+                                MediaType::GiphyGif => "Giphy",
+                                MediaType::ImgurImage => "Imgur Image",
+                                MediaType::ImgurGif => "Imgur GIF",
+                                MediaType::YoutubeVideo => "YouTube",
+                            };
 
                             // the number of components in the supported media is the number available for download
-                            summary_arc.lock().unwrap().media_supported += supported_media.components.len() as i32;
+                            summary_arc.lock().unwrap().media_supported += num_components;
 
-                            let mut local_skipped = 0;
-                            for (index, url) in media_urls.iter().enumerate() {
-                                let mut item_index = format!("{}", index);
-                                let mut extension =
-                                    String::from(url.split('.').last().unwrap_or("unknown")).replace("/", "_");
-
-                                // if the media is a reddit video, they have separate audio and video components.
-                                // to differentiate this from albums, which use the regular _0, _1, etc indices,
-                                // we use _component_0, component_1 indices to explicitly inform that these are
-                                // components rather than individual media.
-                                if media_type == MediaType::RedditVideoWithAudio {
-                                    item_index = format!("component_{}", index);
-                                };
-                                // some reddit videos don't have the mp4 extension, eg. DASH_<A>_<B>
-                                // explicitly adding an mp4 extension to make it easy to recognize in the finder
-                                if (media_type == MediaType::RedditVideoWithoutAudio
-                                    || media_type == MediaType::RedditVideoWithAudio)
-                                    && !extension.ends_with(".mp4") {
-                                    extension = format!("{}.{}", extension, ".mp4");
+                            let media_info = match media_type {
+                                MediaType::RedditVideoWithAudio
+                                | MediaType::RedditVideoWithoutAudio => {
+                                    self.download_reddit_video(
+                                        media_urls,
+                                        media_type,
+                                        &post_metadata,
+                                    )
+                                    .await?
                                 }
-                                let file_name = self.generate_file_name(
-                                    &url,
-                                    &subreddit,
-                                    &extension,
-                                    &post_name,
-                                    &post_title,
-                                    &item_index,
-                                );
-
-                                if self.should_download {
-                                    let status = save_or_skip(url, &file_name);
-                                    // update the summary statistics based on the status
-                                    match status.await? {
-                                        MediaStatus::Downloaded => {
-                                            summary_arc.lock().unwrap().media_downloaded += 1;
-                                        }
-                                        MediaStatus::Skipped => {
-                                            local_skipped += 1;
-                                            summary_arc.lock().unwrap().media_skipped += 1;
-                                        }
+                                MediaType::YoutubeVideo => {
+                                    self.download_youtube_video(
+                                        media_urls.first().unwrap(),
+                                        &post_metadata,
+                                    )
+                                    .await?
+                                }
+                                _ => {
+                                    let mut downloaded = 0;
+                                    let mut skipped = 0;
+                                    for url in media_urls.iter() {
+                                        let (d, s) = self
+                                            .download_other_media(
+                                                url,
+                                                media_type.clone(),
+                                                &post_metadata,
+                                            )
+                                            .await?;
+                                        downloaded += d;
+                                        skipped += s;
                                     }
-                                } else {
-                                    info!("Media available at URL: {}", &url);
-                                    summary_arc.lock().unwrap().media_skipped += 1;
+                                    (downloaded, skipped)
                                 }
+                            };
 
-                                // push all the available media files into a vector
-                                // this is needed in the next step to combine the components using ffmpeg
-                                media_files.push(file_name);
-                            }
-
-                            debug!("Media type: {:#?}", media_type);
-                            debug!("Media files: {:?}", media_files.len());
-                            debug!("Locally skipped items: {:?}", local_skipped);
-
-                            if (media_type == MediaType::RedditVideoWithAudio)
-                                && (media_files.len() == 2)
-                                && (local_skipped < 2) {
-                                if self.ffmpeg_available {
-                                    debug!("Assembling components together");
-                                    let first_url = media_urls.first().unwrap();
-                                    let extension =
-                                        String::from(first_url.split('.').last().unwrap_or("unknown"));
-                                    // this generates the name of the media without the component indices
-                                    // this file name is used for saving the ffmpeg combined file
-                                    let combined_file_name = self.generate_file_name(
-                                        first_url,
-                                        &subreddit,
-                                        &extension,
-                                        &post_name,
-                                        &post_title,
-                                        "0",
-                                    );
-
-                                    let temporary_dir = tempdir()?;
-                                    let temporary_file_name = temporary_dir.path().join("combined.mp4");
-
-                                    if self.should_download {
-                                        // if the media is a reddit video and it has two components, then we
-                                        // need to assemble them into one file using ffmpeg.
-                                        let mut command = Command::new("ffmpeg");
-                                        for media_file in &media_files {
-                                            command.arg("-i").arg(media_file);
-                                        }
-                                        command.arg("-c").arg("copy")
-                                            .arg("-map").arg("1:a")
-                                            .arg("-map").arg("0:v")
-                                            .arg(&temporary_file_name);
-
-                                        debug!("Executing command: {:#?}", command);
-                                        let output = command.output()?;
-
-                                        // check the status code of the ffmpeg command. if the command is unsuccessful,
-                                        // display the error and skip combining the media.
-                                        if output.status.success() {
-                                            debug!("Successfully combined into temporary file: {:?}", temporary_file_name);
-                                            debug!("Renaming file: {} -> {}", temporary_file_name.display(), combined_file_name);
-                                            fs::rename(&temporary_file_name, &combined_file_name)?;
-                                        } else {
-                                            // if we encountered an error, we will write logs from ffmpeg into a new log file
-                                            let log_file_name = self.generate_file_name(
-                                                first_url,
-                                                &subreddit,
-                                                "log",
-                                                &post_name,
-                                                &post_title,
-                                                "0",
-                                            );
-                                            let err = String::from_utf8(output.stderr).unwrap();
-                                            warn!("Could not combine video {} and audio {}. Saving log to: {}", 
-                                                media_urls.first().unwrap(), media_urls.last().unwrap(), log_file_name);
-                                            fs::write(log_file_name, err)?;
-                                        }
-                                    }
-                                } else {
-                                    warn!("Skipping combining the individual components since ffmpeg is not installed");
-                                }
-                            } else {
-                                debug!("Skipping combining reddit video.");
+                            {
+                                let mut s = summary_arc.lock().unwrap();
+                                s.media_downloaded += media_info.0;
+                                s.media_skipped += media_info.1;
+                                let entry =
+                                    s.by_source.entry(source_label.to_string()).or_default();
+                                entry.supported += num_components;
+                                entry.downloaded += media_info.0;
+                                entry.skipped += media_info.1;
                             }
                         }
                     } else {
@@ -331,7 +311,7 @@ impl<'a> Downloader<'a> {
             .try_collect::<()>()
             .await?;
 
-        let local_summary = *summary.lock().unwrap();
+        let local_summary = summary.lock().unwrap().clone();
 
         debug!("Collection statistics: ");
         debug!("Number of supported media: {}", local_summary.media_supported);
@@ -345,56 +325,262 @@ impl<'a> Downloader<'a> {
     fn generate_file_name(
         &self,
         url: &str,
-        subreddit: &str,
         extension: &str,
-        name: &str,
-        title: &str,
         index: &str,
+        post_metadata: &PostMetadata,
     ) -> String {
-        return if !self.use_human_readable {
-            // create a hash for the media using the URL the media is located at
-            // this helps to make sure the media download always writes the same file
-            // name irrespective of how many times it's run. If run more than once, the
-            // media is overwritten by this method
-            let hash = md5::compute(url);
-            format!(
-                // TODO: Fixme, use appropriate prefix
-                "{}/{}/img-{:x}.{}",
-                self.data_directory, subreddit, hash, extension
-            )
-        } else {
-            let canonical_title: String = title
-                .to_lowercase()
-                .chars()
-                // to make sure file names don't exceed operating system maximums, truncate at 200
-                // you could possibly stretch beyond 200, but this is a conservative estimate that
-                // leaves 55 bytes for the name string
-                .take(200)
-                .enumerate()
-                .map(|(_, c)| {
-                    if c.is_whitespace()
-                        || c == '.'
-                        || c == '/'
-                        || c == '\\'
-                        || c == ':'
-                        || c == '='
-                    {
-                        '_'
-                    } else {
-                        c
+        // Compute MD5 of the media URL and take the first 8 hex characters as a
+        // short collision-proof fingerprint. The author + post ID + index prefix
+        // already provides grouping; the hash is purely a last-resort guard.
+        let hash = format!("{:x}", md5::compute(url));
+        let short_hash = &hash[..8];
+        format!(
+            "{}/{}/{}_{}_{}_{}.{}",
+            self.data_directory,
+            post_metadata.subreddit,
+            post_metadata.author,
+            post_metadata.id,
+            index,
+            short_hash,
+            extension
+        )
+    }
+
+    /// Helper function to download reddit videos
+    async fn download_reddit_video(
+        &self,
+        media_urls: &Vec<String>,
+        media_type: MediaType,
+        post_metadata: &PostMetadata<'_>,
+    ) -> Result<(i32, i32), ReddSaverError> {
+        // gather media files for reddit video
+        let mut media_files = Vec::new();
+        let mut media_downloaded = 0;
+        let mut media_skipped = 0;
+
+        let mut local_skipped = 0;
+        for (index, url) in media_urls.iter().enumerate() {
+            let mut item_index = format!("{}", index);
+            let mut extension =
+                String::from(url.split('.').last().unwrap_or("unknown")).replace("/", "_");
+
+            // if the media is a reddit video, they have separate audio and video components.
+            // to differentiate this from albums, which use the regular _0, _1, etc indices,
+            // we use _component_0, component_1 indices to explicitly inform that these are
+            // components rather than individual media.
+            if media_type == MediaType::RedditVideoWithAudio {
+                item_index = format!("component_{}", index);
+            };
+            // some reddit videos don't have the mp4 extension, eg. DASH_<A>_<B>
+            // explicitly adding an mp4 extension to make it easy to recognize in the finder
+            if (media_type == MediaType::RedditVideoWithoutAudio
+                || media_type == MediaType::RedditVideoWithAudio)
+                && !extension.ends_with(".mp4")
+            {
+                extension = format!("{}.{}", extension, ".mp4");
+            }
+            let file_name = self.generate_file_name(
+                &url,
+                &extension,
+                &item_index,
+                post_metadata,
+            );
+
+            if self.should_download {
+                let status = save_or_skip(url, &file_name);
+                // update the summary statistics based on the status
+                match status.await? {
+                    MediaStatus::Downloaded => {
+                        media_downloaded += 1;
                     }
-                })
-                .collect();
-            // create a canonical human readable file name using the post's title
-            // note that the name of the post is something of the form t3_<randomstring>
-            let canonical_name: String =
-                if index == "0" { String::from(name) } else { format!("{}_{}", name, index) }
-                    .replace(".", "_");
-            format!(
-                "{}/{}/{}_{}.{}",
-                self.data_directory, subreddit, canonical_title, canonical_name, extension
-            )
+                    MediaStatus::Skipped => {
+                        local_skipped += 1;
+                        media_skipped += 1;
+                    }
+                }
+            } else {
+                info!("Media available at URL: {}", &url);
+                media_skipped += 1;
+            }
+
+            // push all the available media files into a vector
+            // this is needed in the next step to combine the components using ffmpeg
+            media_files.push(file_name);
+        }
+
+        debug!("Media type: {:#?}", media_type);
+        debug!("Media files: {:?}", media_files.len());
+        debug!("Locally skipped items: {:?}", local_skipped);
+
+        if (media_type == MediaType::RedditVideoWithAudio)
+            && (media_files.len() == 2)
+            && (local_skipped < 2)
+        {
+            if self.ffmpeg_available {
+                debug!("Assembling components together");
+                let first_url = media_urls.first().unwrap();
+                let extension = String::from(first_url.split('.').last().unwrap_or("unknown"));
+                // this generates the name of the media without the component indices
+                // this file name is used for saving the ffmpeg combined file
+                let combined_file_name = self.generate_file_name(
+                    first_url,
+                    &extension,
+                    "0",
+                    post_metadata,
+                );
+
+                let temporary_dir = tempdir()?;
+                let temporary_file_name = temporary_dir.path().join("combined.mp4");
+
+                if self.should_download {
+                    // if the media is a reddit video and it has two components, then we
+                    // need to assemble them into one file using ffmpeg.
+                    let mut command = Command::new("ffmpeg");
+                    for media_file in &media_files {
+                        command.arg("-i").arg(media_file);
+                    }
+                    command
+                        .arg("-c")
+                        .arg("copy")
+                        .arg("-map")
+                        .arg("1:a")
+                        .arg("-map")
+                        .arg("0:v")
+                        .arg(&temporary_file_name);
+
+                    debug!("Executing command: {:#?}", command);
+                    let output = command.output()?;
+
+                    // check the status code of the ffmpeg command. if the command is unsuccessful,
+                    // display the error and skip combining the media.
+                    if output.status.success() {
+                        debug!(
+                            "Successfully combined into temporary file: {:?}",
+                            temporary_file_name
+                        );
+                        debug!(
+                            "Renaming file: {} -> {}",
+                            temporary_file_name.display(),
+                            combined_file_name
+                        );
+                        fs::rename(&temporary_file_name, &combined_file_name)?;
+                    } else {
+                        // if we encountered an error, we will write logs from ffmpeg into a new log file
+                        let log_file_name = self.generate_file_name(
+                            first_url,
+                            "log",
+                            "0",
+                            post_metadata,
+                        );
+                        let err = String::from_utf8(output.stderr).unwrap();
+                        warn!(
+                            "Could not combine video {} and audio {}. Saving log to: {}",
+                            media_urls.first().unwrap(),
+                            media_urls.last().unwrap(),
+                            log_file_name
+                        );
+                        fs::write(log_file_name, err)?;
+                    }
+                }
+            } else {
+                warn!("Skipping combining the individual components since ffmpeg is not installed");
+            }
+        } else {
+            debug!("Skipping combining reddit video.");
+        }
+
+        return Ok((media_downloaded, media_skipped));
+    }
+
+    /// Helper function to download youtube videos
+    async fn download_youtube_video(
+        &self,
+        media_url: &String,
+        post_metadata: &PostMetadata<'_>,
+    ) -> Result<(i32, i32), ReddSaverError> {
+        let mut media_downloaded = 0;
+        let mut media_skipped = 0;
+
+        if self.should_download {
+            if self.ytdlp_available {
+                let file_name = self.generate_file_name(
+                    &media_url,
+                    "mp4",
+                    "0",
+                    post_metadata,
+                );
+
+                let mut command = Command::new("yt-dlp");
+                command
+                    .arg("-f")
+                    .arg("bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best")
+                    .arg(media_url)
+                    .arg("--output")
+                    .arg(&file_name);
+
+                info!("Starting youtube video download: {}", media_url);
+                debug!("Executing command: {:#?}", command);
+                let output = command.output()?;
+
+                if output.status.success() {
+                    info!("Successfully downloaded youtube video: {} to {}", media_url, &file_name);
+                    media_downloaded += 1;
+                } else {
+                    warn!("Unable to download youtube video: {}", media_url);
+                    media_skipped += 1;
+                }
+            } else {
+                warn!("yt-dlp is not installed, skipping youtube video download: {}", media_url);
+            }
+        } else {
+            info!("Media available at URL: {}", &media_url);
+            media_skipped += 1;
+        }
+
+        return Ok((media_downloaded, media_skipped));
+    }
+
+    /// Helper function to download other media
+    async fn download_other_media(
+        &self,
+        media_url: &String,
+        media_type: MediaType,
+        post_metadata: &PostMetadata<'_>,
+    ) -> Result<(i32, i32), ReddSaverError> {
+        let mut media_downloaded = 0;
+        let mut media_skipped = 0;
+
+        let index = "0";
+        let extension = if media_type == MediaType::RedgifsVideo {
+            String::from("mp4")
+        } else {
+            String::from(media_url.split('.').last().unwrap_or("unknown")).replace("/", "_")
         };
+
+        let file_name = self.generate_file_name(
+            &media_url,
+            &extension,
+            &index,
+            post_metadata,
+        );
+
+        if self.should_download {
+            let status = save_or_skip(&*media_url, &file_name);
+            // update the summary statistics based on the status
+            match status.await? {
+                MediaStatus::Downloaded => {
+                    media_downloaded += 1;
+                }
+                MediaStatus::Skipped => {
+                    media_skipped += 1;
+                }
+            }
+        } else {
+            info!("Media available at URL: {}", &media_url);
+            media_skipped += 1;
+        }
+
+        return Ok((media_downloaded, media_skipped));
     }
 }
 
@@ -424,29 +610,50 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
         Err(_e) => return Err(ReddSaverError::CouldNotCreateDirectory),
     }
 
-    let maybe_response = reqwest::get(url).await;
-    if let Ok(response) = maybe_response {
+    let maybe_response: Option<reqwest::Response> = if url.contains(REDGIFS_DOMAIN) {
+        // fetch_redgif_url returns None (with a warning already emitted) when the
+        // gif is unavailable; propagate any hard errors with `?`
+        match fetch_redgif_url(RG_TOKEN.get().await, url).await? {
+            Some(r) => Some(r),
+            None => return Ok(false),
+        }
+    } else {
+        match reqwest::get(url).await {
+            Ok(r) => Some(r),
+            Err(e) => {
+                warn!("Skipping {}: request failed ({})", url, e);
+                None
+            }
+        }
+    };
+    if let Some(response) = maybe_response {
         debug!("URL Response: {:#?}", response);
-        let maybe_data = response.bytes().await;
-        if let Ok(data) = maybe_data {
-            debug!("Bytes length of the data: {:#?}", data.len());
-            let maybe_output = File::create(&file_name);
-            match maybe_output {
-                Ok(mut output) => {
-                    debug!("Created a file: {}", file_name);
-                    match io::copy(&mut data.as_ref(), &mut output) {
-                        Ok(_) => {
-                            info!("Successfully saved media: {} from url {}", file_name, url);
-                            status = true;
-                        }
-                        Err(_e) => {
-                            error!("Could not save media from url {} to {}", url, file_name);
+        if !response.status().is_success() {
+            warn!("Skipping {}: server returned HTTP {}", url, response.status());
+        } else {
+            let maybe_data = response.bytes().await;
+            if let Ok(data) = maybe_data {
+                debug!("Bytes length of the data: {:#?}", data.len());
+                let maybe_output = File::create(&file_name);
+                match maybe_output {
+                    Ok(mut output) => {
+                        debug!("Created a file: {}", file_name);
+                        match io::copy(&mut data.as_ref(), &mut output) {
+                            Ok(_) => {
+                                debug!("Successfully saved media: {} from url {}", file_name, url);
+                                status = true;
+                            }
+                            Err(_e) => {
+                                error!("Could not save media from url {} to {}", url, file_name);
+                            }
                         }
                     }
+                    Err(_) => {
+                        warn!("Could not create a file with the name: {}. Skipping", file_name);
+                    }
                 }
-                Err(_) => {
-                    warn!("Could not create a file with the name: {}. Skipping", file_name);
-                }
+            } else {
+                warn!("Skipping {}: could not read response body", url);
             }
         }
     }
@@ -626,9 +833,8 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
             }
         }
 
-        // gfycat and redgifs
-        if url.contains(GFYCAT_DOMAIN) || url.contains(REDGIFS_DOMAIN) {
-            // if the Gfycat/Redgifs URL points directly to the mp4, download as is
+        // gfycat (shut down, but v1 API still reachable via RedGifs endpoint)
+        if url.contains(GFYCAT_DOMAIN) {
             if url.ends_with(MP4_EXTENSION) {
                 let supported_media = SupportedMedia {
                     components: vec![String::from(url)],
@@ -636,14 +842,20 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
                 };
                 media.push(supported_media);
             } else {
-                // if the provided link is a gfycat post link, use the gfycat API
-                // to get the URL. gfycat likes to use lowercase names in their posts
-                // but the ID for the GIF is Pascal-cased. The case-conversion info
-                // can only be obtained from the API at the moment
                 if let Some(supported_media) = gfy_to_mp4(url).await? {
                     media.push(supported_media);
                 }
             }
+        }
+
+        // redgifs — authenticated v2 pipeline; pass the original URL through as-is,
+        // download_media() will route it through fetch_redgif_url()
+        if url.contains(REDGIFS_DOMAIN) {
+            debug!("Found RG url {}", url);
+            media.push(SupportedMedia {
+                components: vec![String::from(url)],
+                media_type: MediaType::RedgifsVideo,
+            });
         }
 
         // giphy
@@ -705,6 +917,30 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
                 };
                 media.push(supported_media);
             }
+        }
+
+        if url.contains(YOUTUBE_SHORT_DOMAIN) {
+            debug!("The Youtube short URL: {}", url);
+
+            let captures = YOUTUBE_RE.captures(url).unwrap();
+            let video_id = &captures["video_id"];
+            debug!("The youtube video id: {}", video_id);
+
+            let long = format!("https://www.youtube.com/watch?v={}", video_id);
+            debug!("Short URL: {}, Long URL: {}", url, long);
+            let supported_media =
+                SupportedMedia { components: vec![long], media_type: MediaType::YoutubeVideo };
+            media.push(supported_media);
+        }
+
+        if url.contains(YOUTUBE_DOMAIN) {
+            debug!("The Youtube long URL: {}", parsed);
+
+            let supported_media = SupportedMedia {
+                components: vec![String::from(parsed)],
+                media_type: MediaType::YoutubeVideo,
+            };
+            media.push(supported_media);
         }
     }
 
