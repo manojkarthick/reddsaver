@@ -56,13 +56,6 @@ async fn main() -> Result<(), ReddSaverError> {
                 .help("Dry run and print the URLs of saved media to download"),
         )
         .arg(
-            Arg::new("human_readable")
-                .short('H')
-                .long("human-readable")
-                .action(ArgAction::SetTrue)
-                .help("Use human readable names for files"),
-        )
-        .arg(
             Arg::new("subreddits")
                 .short('S')
                 .long("subreddits")
@@ -83,7 +76,7 @@ async fn main() -> Result<(), ReddSaverError> {
                 .short('U')
                 .long("undo")
                 .action(ArgAction::SetTrue)
-                .help("Unsave or remote upvote for post after processing"),
+                .help("Unsave or remove upvote for post after processing"),
         )
         .arg(
             Arg::new("youtube-downloader")
@@ -103,8 +96,6 @@ async fn main() -> Result<(), ReddSaverError> {
     let youtube_downloader = matches.get_one::<String>("youtube-downloader").map(|s| s.as_str()).unwrap_or("youtube-dl");
     // check if the youtube downloader program is present on the system
     let youtube_downloader_available = application_present(String::from(youtube_downloader));
-    // generate human readable file names instead of MD5 Hashed file names
-    let use_human_readable = matches.get_flag("human_readable");
     // restrict downloads to these subreddits
     let subreddits: Option<Vec<&str>> = matches
         .get_many::<String>("subreddits")
@@ -195,7 +186,6 @@ async fn main() -> Result<(), ReddSaverError> {
         &data_directory,
         &subreddits,
         should_download,
-        use_human_readable,
         undo,
         ffmpeg_available,
         youtube_downloader,

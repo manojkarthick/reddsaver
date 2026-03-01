@@ -108,7 +108,6 @@ pub struct Downloader<'a> {
     data_directory: &'a str,
     subreddits: &'a Option<Vec<&'a str>>,
     should_download: bool,
-    use_human_readable: bool,
     undo: bool,
     ffmpeg_available: bool,
     youtube_downloader: &'a str,
@@ -119,11 +118,8 @@ pub struct Downloader<'a> {
 pub struct PostMetadata<'a> {
     subreddit: &'a str,
     author: &'a str,
-    /// Short base-36 post ID (e.g. "abc123"), used in default file names.
+    /// Short base-36 post ID (e.g. "abc123").
     id: &'a str,
-    /// Full Reddit name (e.g. "t3_abc123"), used in human-readable file names.
-    name: &'a str,
-    title: &'a str,
 }
 
 impl<'a> Downloader<'a> {
@@ -134,7 +130,6 @@ impl<'a> Downloader<'a> {
         data_directory: &'a str,
         subreddits: &'a Option<Vec<&'a str>>,
         should_download: bool,
-        use_human_readable: bool,
         undo: bool,
         ffmpeg_available: bool,
         youtube_downloader: &'a str,
@@ -147,7 +142,6 @@ impl<'a> Downloader<'a> {
             data_directory,
             subreddits,
             should_download,
-            use_human_readable,
             undo,
             ffmpeg_available,
             youtube_downloader,
@@ -213,17 +207,11 @@ impl<'a> Downloader<'a> {
                     let post_author = item.data.author.borrow();
                     let post_id = item.data.id.borrow();
                     let post_name = item.data.name.borrow();
-                    let post_title = match item.data.title.as_ref() {
-                        Some(t) => t,
-                        None => "",
-                    };
 
                     let post_metadata = PostMetadata {
                         subreddit,
                         author: post_author,
                         id: post_id,
-                        name: post_name,
-                        title: post_title,
                     };
 
                     let is_valid = if let Some(s) = self.subreddits.as_ref() {
@@ -344,58 +332,21 @@ impl<'a> Downloader<'a> {
         index: &str,
         post_metadata: &PostMetadata,
     ) -> String {
-        return if !self.use_human_readable {
-            // Compute MD5 of the media URL and take the first 8 hex characters as a
-            // short collision-proof fingerprint. The author + post ID + index prefix
-            // already provides grouping; the hash is purely a last-resort guard.
-            let hash = format!("{:x}", md5::compute(url));
-            let short_hash = &hash[..8];
-            format!(
-                "{}/{}/{}_{}_{}_{}.{}",
-                self.data_directory,
-                post_metadata.subreddit,
-                post_metadata.author,
-                post_metadata.id,
-                index,
-                short_hash,
-                extension
-            )
-        } else {
-            let canonical_title: String = post_metadata.title
-                .to_lowercase()
-                .chars()
-                // to make sure file names don't exceed operating system maximums, truncate at 200
-                // you could possibly stretch beyond 200, but this is a conservative estimate that
-                // leaves 55 bytes for the name string
-                .take(200)
-                .enumerate()
-                .map(|(_, c)| {
-                    if c.is_whitespace()
-                        || c == '.'
-                        || c == '/'
-                        || c == '\\'
-                        || c == ':'
-                        || c == '='
-                        || c == '&'
-                        || c == '$'
-                        || c == '|'
-                    {
-                        '_'
-                    } else {
-                        c
-                    }
-                })
-                .collect();
-            // create a canonical human readable file name using the post's title
-            // note that the name of the post is something of the form t3_<randomstring>
-            let canonical_name: String =
-                if index == "0" { String::from(post_metadata.name) } else { format!("{}_{}", post_metadata.name, index) }
-                    .replace(".", "_");
-            format!(
-                "{}/{}/{}_{}.{}",
-                self.data_directory, post_metadata.subreddit, canonical_title, canonical_name, extension
-            )
-        };
+        // Compute MD5 of the media URL and take the first 8 hex characters as a
+        // short collision-proof fingerprint. The author + post ID + index prefix
+        // already provides grouping; the hash is purely a last-resort guard.
+        let hash = format!("{:x}", md5::compute(url));
+        let short_hash = &hash[..8];
+        format!(
+            "{}/{}/{}_{}_{}_{}.{}",
+            self.data_directory,
+            post_metadata.subreddit,
+            post_metadata.author,
+            post_metadata.id,
+            index,
+            short_hash,
+            extension
+        )
     }
 
     /// Helper function to download reddit videos
