@@ -665,6 +665,9 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
     };
     if let Ok(response) = maybe_response {
         debug!("URL Response: {:#?}", response);
+        if !response.status().is_success() {
+            warn!("Skipping {}: server returned HTTP {}", url, response.status());
+        } else {
         let maybe_data = response.bytes().await;
         if let Ok(data) = maybe_data {
             debug!("Bytes length of the data: {:#?}", data.len());
@@ -686,7 +689,12 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
                     warn!("Could not create a file with the name: {}. Skipping", file_name);
                 }
             }
+        } else {
+            warn!("Skipping {}: could not read response body", url);
         }
+        } // end else (status is success)
+    } else {
+        warn!("Skipping {}: request failed ({})", url, maybe_response.unwrap_err());
     }
 
     Ok(status)

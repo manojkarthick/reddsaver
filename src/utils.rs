@@ -1,5 +1,5 @@
 use crate::errors::ReddSaverError;
-use log::debug;
+use log::{debug, warn};
 use mime::Mime;
 use rand::Rng;
 use random_names::RandomName;
@@ -118,11 +118,17 @@ pub async fn fetch_redgif_url(rg_token: &str, orig_url: &str) -> reqwest::Result
         .await?;
 
     let api_data: Value = serde_json::from_str(&api_resp).unwrap_or(Value::Null);
-    let hd_url = api_data["gif"]["urls"]["hd"].as_str().unwrap_or("http://127.0.0.1/invalid");
+    let hd_url = match api_data["gif"]["urls"]["hd"].as_str() {
+        Some(u) => u.to_string(),
+        None => {
+            warn!("Skipping RedGifs URL {}: no HD URL in API response (gif may be deleted or private)", orig_url);
+            return client.get("http://127.0.0.1/invalid").send().await;
+        }
+    };
     debug!("RedGifs HD URL: {}", hd_url);
 
     client
-        .get(hd_url)
+        .get(&hd_url)
         .header("User-Agent", LOC_AGENT)
         .header("Authorization", rg_token)
         .send()
