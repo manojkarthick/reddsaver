@@ -286,15 +286,14 @@ impl<'a> Downloader<'a> {
                                 entry.skipped += media_info.1;
                             }
                         }
+                        if self.undo {
+                            self.user.undo(post_name, listing_type).await?;
+                        }
                     } else {
                         debug!(
                             "Subreddit INVALID!: {} NOT present in {:#?}",
                             subreddit, self.subreddits
                         );
-                    }
-
-                    if self.undo {
-                        self.user.undo(post_name, listing_type).await?;
                     }
 
                     Ok::<(), ReddSaverError>(())
