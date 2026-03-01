@@ -71,13 +71,6 @@ async fn main() -> Result<(), ReddSaverError> {
                 .action(ArgAction::SetTrue)
                 .help("Download media from upvoted posts"),
         )
-        .arg(
-            Arg::new("undo")
-                .short('U')
-                .long("undo")
-                .action(ArgAction::SetTrue)
-                .help("Unsave or remove upvote for post after processing"),
-        )
         .get_matches();
 
     let env_file = matches.get_one::<String>("environment").map(|s| s.as_str()).unwrap();
@@ -94,8 +87,6 @@ async fn main() -> Result<(), ReddSaverError> {
         matches.get_many::<String>("subreddits").map(|vals| vals.map(|s| s.as_str()).collect());
     let upvoted = matches.get_flag("upvoted");
     let listing_type = if upvoted { &ListingType::Upvoted } else { &ListingType::Saved };
-
-    let undo = matches.get_flag("undo");
 
     // initialize environment from the .env file
     dotenvy::from_filename(env_file).ok();
@@ -126,7 +117,6 @@ async fn main() -> Result<(), ReddSaverError> {
         info!("USER_AGENT = {}", &user_agent);
         info!("SUBREDDITS = {}", print_subreddits(&subreddits));
         info!("UPVOTED = {}", upvoted);
-        info!("UNDO = {}", undo);
         info!("FFMPEG AVAILABLE = {}", ffmpeg_available);
         info!("YT-DLP AVAILABLE = {}", ytdlp_available);
 
@@ -170,13 +160,10 @@ async fn main() -> Result<(), ReddSaverError> {
     debug!("Posts: {:#?}", listing);
 
     let downloader = Downloader::new(
-        &user,
         &listing,
-        &listing_type,
         &data_directory,
         &subreddits,
         should_download,
-        undo,
         ffmpeg_available,
         ytdlp_available,
     );

@@ -18,7 +18,6 @@ use url::{Position, Url};
 use crate::errors::ReddSaverError;
 use crate::structures::{GfyData, PostData};
 use crate::structures::{Listing, SourceStats, Summary};
-use crate::user::{ListingType, User};
 use async_once::AsyncOnce;
 
 use crate::utils::{check_path_present, check_url_is_mp4, fetch_redgif_token, fetch_redgif_url};
@@ -101,13 +100,10 @@ struct SupportedMedia {
 
 #[derive(Debug)]
 pub struct Downloader<'a> {
-    user: &'a User<'a>,
     listing: &'a Vec<Listing>,
-    listing_type: &'a ListingType,
     data_directory: &'a str,
     subreddits: &'a Option<Vec<&'a str>>,
     should_download: bool,
-    undo: bool,
     ffmpeg_available: bool,
     ytdlp_available: bool,
 }
@@ -122,24 +118,18 @@ pub struct PostMetadata<'a> {
 
 impl<'a> Downloader<'a> {
     pub fn new(
-        user: &'a User,
         listing: &'a Vec<Listing>,
-        listing_type: &'a ListingType,
         data_directory: &'a str,
         subreddits: &'a Option<Vec<&'a str>>,
         should_download: bool,
-        undo: bool,
         ffmpeg_available: bool,
         ytdlp_available: bool,
     ) -> Downloader<'a> {
         Downloader {
-            user,
             listing,
-            listing_type,
             data_directory,
             subreddits,
             should_download,
-            undo,
             ffmpeg_available,
             ytdlp_available,
         }
@@ -149,8 +139,7 @@ impl<'a> Downloader<'a> {
         let mut full_summary = Summary::zero();
 
         for collection in self.listing {
-            full_summary =
-                full_summary.add(self.download_collection(collection, self.listing_type).await?);
+            full_summary = full_summary.add(self.download_collection(collection).await?);
         }
 
         info!("#####################################");
@@ -176,11 +165,7 @@ impl<'a> Downloader<'a> {
     }
 
     /// Download and save medias from Reddit in parallel
-    async fn download_collection(
-        &self,
-        collection: &Listing,
-        listing_type: &ListingType,
-    ) -> Result<Summary, ReddSaverError> {
+    async fn download_collection(&self, collection: &Listing) -> Result<Summary, ReddSaverError> {
         let summary = Arc::new(Mutex::new(Summary::zero()));
 
         collection
@@ -199,7 +184,6 @@ impl<'a> Downloader<'a> {
                     let subreddit = item.data.subreddit.borrow();
                     let post_author = item.data.author.borrow();
                     let post_id = item.data.id.borrow();
-                    let post_name = item.data.name.borrow();
 
                     let post_metadata =
                         PostMetadata { subreddit, author: post_author, id: post_id };
@@ -285,9 +269,6 @@ impl<'a> Downloader<'a> {
                                 entry.downloaded += media_info.0;
                                 entry.skipped += media_info.1;
                             }
-                        }
-                        if self.undo {
-                            self.user.undo(post_name, listing_type).await?;
                         }
                     } else {
                         debug!(

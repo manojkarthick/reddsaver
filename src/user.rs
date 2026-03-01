@@ -4,7 +4,6 @@ use crate::structures::{Listing, UserAbout};
 use crate::utils::get_user_agent_string;
 use log::{debug, info};
 use reqwest::header::USER_AGENT;
-use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 
@@ -111,34 +110,5 @@ impl<'a> User<'a> {
         }
 
         Ok(listing)
-    }
-
-    pub async fn undo(&self, name: &str, listing_type: &ListingType) -> Result<(), ReddSaverError> {
-        let client = reqwest::Client::new();
-        let url: String;
-        let mut map = HashMap::new();
-        map.insert("id", name);
-
-        match listing_type {
-            ListingType::Upvoted => {
-                url = format!("https://oauth.reddit.com/api/vote");
-                map.insert("dir", "0");
-            }
-            ListingType::Saved => {
-                url = format!("https://oauth.reddit.com/api/unsave");
-            }
-        }
-
-        let response = client
-            .post(&url)
-            .bearer_auth(&self.auth.access_token)
-            .header(USER_AGENT, get_user_agent_string(None, None))
-            .form(&map)
-            .send()
-            .await?;
-
-        debug!("Response: {:#?}", response);
-
-        Ok(())
     }
 }
