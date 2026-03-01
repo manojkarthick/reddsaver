@@ -692,7 +692,7 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
                         debug!("Created a file: {}", file_name);
                         match io::copy(&mut data.as_ref(), &mut output) {
                             Ok(_) => {
-                                info!("Successfully saved media: {} from url {}", file_name, url);
+                                debug!("Successfully saved media: {} from url {}", file_name, url);
                                 status = true;
                             }
                             Err(_e) => {
