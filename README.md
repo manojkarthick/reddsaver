@@ -67,7 +67,8 @@ home.packages = [ pkgs.reddsaver ];
 
 ### Build from source
 
-Requires Rust 1.75.0 or later.
+Requires a current stable Rust toolchain with Cargo support for lock file version 4.
+If `cargo build` fails with a lock file version error, upgrade Rust and Cargo first.
 
 ```shell
 git clone https://github.com/manojkarthick/reddsaver.git

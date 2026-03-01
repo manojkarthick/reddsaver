@@ -1,16 +1,24 @@
-FROM rust:1.50.0
-WORKDIR /usr/src
+FROM rust:bookworm AS builder
+WORKDIR /app
 
-RUN USER=root cargo new reddsaver
-
-WORKDIR /usr/src/reddsaver
 COPY Cargo.toml Cargo.lock ./
-RUN cargo fetch
+RUN mkdir -p src && \
+    printf 'fn main() {}\n' > src/main.rs && \
+    cargo fetch && \
+    rm -rf src
 
 COPY src ./src
 RUN cargo build --release
-RUN mkdir -pv /app
-RUN cp ./target/release/reddsaver /app/reddsaver
+
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        ffmpeg \
+        yt-dlp && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-CMD ["./reddsaver"]
+COPY --from=builder /app/target/release/reddsaver /app/reddsaver
+
+ENTRYPOINT ["/app/reddsaver"]

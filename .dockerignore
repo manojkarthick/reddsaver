@@ -1,4 +1,7 @@
 data
+mock/
+test-data/
+downloads*/
 target
 Dockerfile
 .dockerignore
