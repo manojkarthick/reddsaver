@@ -1,4 +1,5 @@
 use std::env;
+use std::fs;
 use std::process::ExitCode;
 
 use clap::{crate_version, Arg, ArgAction, ArgMatches, Command};
@@ -9,7 +10,6 @@ use auth::Client;
 
 use crate::download::Downloader;
 use crate::errors::ReddSaverError;
-use crate::errors::ReddSaverError::DataDirNotFound;
 use crate::user::{ListingType, User};
 use crate::utils::*;
 
@@ -123,9 +123,7 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
     let password = required_env.password;
     let user_agent = get_user_agent_string(None, None);
 
-    if !check_path_present(&data_directory) {
-        return Err(DataDirNotFound);
-    }
+    ensure_data_directory(&data_directory)?;
 
     // if the option is show-config, show the configuration and return immediately
     if matches.get_flag("show_config") {
@@ -260,6 +258,14 @@ where
     }
 }
 
+fn ensure_data_directory(path: &str) -> Result<(), ReddSaverError> {
+    if !check_path_present(path) {
+        info!("Data directory not found, creating {}", path);
+        fs::create_dir_all(path)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -267,7 +273,39 @@ mod tests {
     use std::io::Write;
 
     use super::*;
-    use tempfile::NamedTempFile;
+    use tempfile::{tempdir, NamedTempFile};
+
+    #[test]
+    fn creates_missing_data_directory() {
+        let parent = tempdir().unwrap();
+        let new_dir = parent.path().join("data");
+        assert!(!new_dir.exists());
+
+        ensure_data_directory(new_dir.to_str().unwrap()).unwrap();
+
+        assert!(new_dir.exists());
+    }
+
+    #[test]
+    fn does_not_fail_when_data_directory_already_exists() {
+        let dir = tempdir().unwrap();
+        assert!(dir.path().exists());
+
+        ensure_data_directory(dir.path().to_str().unwrap()).unwrap();
+
+        assert!(dir.path().exists());
+    }
+
+    #[test]
+    fn creates_nested_data_directory() {
+        let parent = tempdir().unwrap();
+        let nested = parent.path().join("a").join("b").join("c");
+        assert!(!nested.exists());
+
+        ensure_data_directory(nested.to_str().unwrap()).unwrap();
+
+        assert!(nested.exists());
+    }
 
     #[test]
     fn loads_required_env_when_all_values_are_present() {
