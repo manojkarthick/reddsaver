@@ -92,8 +92,8 @@ async fn main() -> Result<(), ReddSaverError> {
     let should_download = !matches.get_flag("dry_run");
     // check if ffmpeg is present for combining video streams
     let ffmpeg_available = application_present(String::from("ffmpeg"));
-    // get the name of the youtube-dl compatible program to use, else default to youtube-dl
-    let youtube_downloader = matches.get_one::<String>("youtube-downloader").map(|s| s.as_str()).unwrap_or("youtube-dl");
+    // get the name of the youtube-dl compatible program to use, else default to yt-dlp
+    let youtube_downloader = matches.get_one::<String>("youtube-downloader").map(|s| s.as_str()).unwrap_or("yt-dlp");
     // check if the youtube downloader program is present on the system
     let youtube_downloader_available = application_present(String::from(youtube_downloader));
     // restrict downloads to these subreddits
