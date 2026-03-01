@@ -118,8 +118,12 @@ pub struct Downloader<'a> {
 #[derive(Debug)]
 pub struct PostMetadata<'a> {
     subreddit: &'a str,
-    title: &'a str,
+    author: &'a str,
+    /// Short base-36 post ID (e.g. "abc123"), used in default file names.
+    id: &'a str,
+    /// Full Reddit name (e.g. "t3_abc123"), used in human-readable file names.
     name: &'a str,
+    title: &'a str,
 }
 
 impl<'a> Downloader<'a> {
@@ -206,14 +210,21 @@ impl<'a> Downloader<'a> {
                 // we spawn a new async task for the each of the medias to be downloaded
                 async move {
                     let subreddit = item.data.subreddit.borrow();
+                    let post_author = item.data.author.borrow();
+                    let post_id = item.data.id.borrow();
                     let post_name = item.data.name.borrow();
                     let post_title = match item.data.title.as_ref() {
                         Some(t) => t,
                         None => "",
                     };
 
-                    let post_metadata =
-                        PostMetadata { subreddit, name: post_name, title: post_title };
+                    let post_metadata = PostMetadata {
+                        subreddit,
+                        author: post_author,
+                        id: post_id,
+                        name: post_name,
+                        title: post_title,
+                    };
 
                     let is_valid = if let Some(s) = self.subreddits.as_ref() {
                         if s.contains(&subreddit) {
@@ -329,25 +340,28 @@ impl<'a> Downloader<'a> {
     fn generate_file_name(
         &self,
         url: &str,
-        subreddit: &str,
         extension: &str,
-        name: &str,
-        title: &str,
         index: &str,
+        post_metadata: &PostMetadata,
     ) -> String {
         return if !self.use_human_readable {
-            // create a hash for the media using the URL the media is located at
-            // this helps to make sure the media download always writes the same file
-            // name irrespective of how many times it's run. If run more than once, the
-            // media is overwritten by this method
-            let hash = md5::compute(url);
+            // Compute MD5 of the media URL and take the first 8 hex characters as a
+            // short collision-proof fingerprint. The author + post ID + index prefix
+            // already provides grouping; the hash is purely a last-resort guard.
+            let hash = format!("{:x}", md5::compute(url));
+            let short_hash = &hash[..8];
             format!(
-                // TODO: Fixme, use appropriate prefix
-                "{}/{}/img-{:x}.{}",
-                self.data_directory, subreddit, hash, extension
+                "{}/{}/{}_{}_{}_{}.{}",
+                self.data_directory,
+                post_metadata.subreddit,
+                post_metadata.author,
+                post_metadata.id,
+                index,
+                short_hash,
+                extension
             )
         } else {
-            let canonical_title: String = title
+            let canonical_title: String = post_metadata.title
                 .to_lowercase()
                 .chars()
                 // to make sure file names don't exceed operating system maximums, truncate at 200
@@ -375,11 +389,11 @@ impl<'a> Downloader<'a> {
             // create a canonical human readable file name using the post's title
             // note that the name of the post is something of the form t3_<randomstring>
             let canonical_name: String =
-                if index == "0" { String::from(name) } else { format!("{}_{}", name, index) }
+                if index == "0" { String::from(post_metadata.name) } else { format!("{}_{}", post_metadata.name, index) }
                     .replace(".", "_");
             format!(
                 "{}/{}/{}_{}.{}",
-                self.data_directory, subreddit, canonical_title, canonical_name, extension
+                self.data_directory, post_metadata.subreddit, canonical_title, canonical_name, extension
             )
         };
     }
@@ -419,11 +433,9 @@ impl<'a> Downloader<'a> {
             }
             let file_name = self.generate_file_name(
                 &url,
-                &post_metadata.subreddit,
                 &extension,
-                &post_metadata.name,
-                &post_metadata.title,
                 &item_index,
+                post_metadata,
             );
 
             if self.should_download {
@@ -464,11 +476,9 @@ impl<'a> Downloader<'a> {
                 // this file name is used for saving the ffmpeg combined file
                 let combined_file_name = self.generate_file_name(
                     first_url,
-                    &post_metadata.subreddit,
                     &extension,
-                    &post_metadata.name,
-                    &post_metadata.title,
                     "0",
+                    post_metadata,
                 );
 
                 let temporary_dir = tempdir()?;
@@ -510,11 +520,9 @@ impl<'a> Downloader<'a> {
                         // if we encountered an error, we will write logs from ffmpeg into a new log file
                         let log_file_name = self.generate_file_name(
                             first_url,
-                            &post_metadata.subreddit,
                             "log",
-                            &post_metadata.name,
-                            &post_metadata.title,
                             "0",
+                            post_metadata,
                         );
                         let err = String::from_utf8(output.stderr).unwrap();
                         warn!(
@@ -549,11 +557,9 @@ impl<'a> Downloader<'a> {
             if self.youtube_downloader_available {
                 let file_name = self.generate_file_name(
                     &media_url,
-                    &post_metadata.subreddit,
                     "mp4",
-                    &post_metadata.name,
-                    &post_metadata.title,
                     "0",
+                    post_metadata,
                 );
 
                 let mut command = Command::new(self.youtube_downloader);
@@ -605,11 +611,9 @@ impl<'a> Downloader<'a> {
 
         let file_name = self.generate_file_name(
             &media_url,
-            &post_metadata.subreddit,
             &extension,
-            &post_metadata.name,
-            &post_metadata.title,
             &index,
+            post_metadata,
         );
 
         if self.should_download {

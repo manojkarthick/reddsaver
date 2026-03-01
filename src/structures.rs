@@ -79,6 +79,8 @@ pub struct Post {
 #[derive(Deserialize, Debug, Clone)]
 pub struct PostData {
     pub subreddit: String,
+    /// The Reddit username of the post author.
+    pub author: String,
     /// The ID of the post in base-36 form, as used in Reddit's links.
     pub id: String,
     /// The overall points score of this post, as shown on the upvote counter. This is the
