@@ -78,12 +78,6 @@ async fn main() -> Result<(), ReddSaverError> {
                 .action(ArgAction::SetTrue)
                 .help("Unsave or remove upvote for post after processing"),
         )
-        .arg(
-            Arg::new("youtube-downloader")
-                .short('y')
-                .long("youtube-downloader")
-                .help("Youtube-dl or compatible fork to use for downloading"),
-        )
         .get_matches();
 
     let env_file = matches.get_one::<String>("environment").map(|s| s.as_str()).unwrap();
@@ -92,10 +86,8 @@ async fn main() -> Result<(), ReddSaverError> {
     let should_download = !matches.get_flag("dry_run");
     // check if ffmpeg is present for combining video streams
     let ffmpeg_available = application_present(String::from("ffmpeg"));
-    // get the name of the youtube-dl compatible program to use, else default to yt-dlp
-    let youtube_downloader = matches.get_one::<String>("youtube-downloader").map(|s| s.as_str()).unwrap_or("yt-dlp");
-    // check if the youtube downloader program is present on the system
-    let youtube_downloader_available = application_present(String::from(youtube_downloader));
+    // check if yt-dlp is present on the system
+    let ytdlp_available = application_present(String::from("yt-dlp"));
     // restrict downloads to these subreddits
     let subreddits: Option<Vec<&str>> = matches
         .get_many::<String>("subreddits")
@@ -136,8 +128,7 @@ async fn main() -> Result<(), ReddSaverError> {
         info!("UPVOTED = {}", upvoted);
         info!("UNDO = {}", undo);
         info!("FFMPEG AVAILABLE = {}", ffmpeg_available);
-        info!("YOUTUBE DOWNLOADER = {}", youtube_downloader);
-        info!("YOUTUBE DOWNLOADER AVAILABLE = {}", youtube_downloader_available);
+        info!("YT-DLP AVAILABLE = {}", ytdlp_available);
 
         return Ok(());
     }
@@ -150,12 +141,11 @@ async fn main() -> Result<(), ReddSaverError> {
         );
     }
 
-    if !youtube_downloader_available {
+    if !ytdlp_available {
         warn!(
-            "Youtube-dl or compatible fork is not installed. \
-            Youtube videos will not be downloaded. \
-            Install youtube-dl, yt-dlp or any compatible fork."
-        )
+            "yt-dlp is not installed. Youtube videos will not be downloaded. \
+            Install yt-dlp (https://github.com/yt-dlp/yt-dlp)."
+        );
     }
 
     // login to reddit using the credentials provided and get API bearer token
@@ -188,8 +178,7 @@ async fn main() -> Result<(), ReddSaverError> {
         should_download,
         undo,
         ffmpeg_available,
-        youtube_downloader,
-        youtube_downloader_available,
+        ytdlp_available,
     );
 
     downloader.run().await?;

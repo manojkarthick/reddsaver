@@ -110,8 +110,7 @@ pub struct Downloader<'a> {
     should_download: bool,
     undo: bool,
     ffmpeg_available: bool,
-    youtube_downloader: &'a str,
-    youtube_downloader_available: bool,
+    ytdlp_available: bool,
 }
 
 #[derive(Debug)]
@@ -132,8 +131,7 @@ impl<'a> Downloader<'a> {
         should_download: bool,
         undo: bool,
         ffmpeg_available: bool,
-        youtube_downloader: &'a str,
-        youtube_downloader_available: bool,
+        ytdlp_available: bool,
     ) -> Downloader<'a> {
         Downloader {
             user,
@@ -144,8 +142,7 @@ impl<'a> Downloader<'a> {
             should_download,
             undo,
             ffmpeg_available,
-            youtube_downloader,
-            youtube_downloader_available,
+            ytdlp_available,
         }
     }
 
@@ -505,7 +502,7 @@ impl<'a> Downloader<'a> {
         let mut media_skipped = 0;
 
         if self.should_download {
-            if self.youtube_downloader_available {
+            if self.ytdlp_available {
                 let file_name = self.generate_file_name(
                     &media_url,
                     "mp4",
@@ -513,7 +510,7 @@ impl<'a> Downloader<'a> {
                     post_metadata,
                 );
 
-                let mut command = Command::new(self.youtube_downloader);
+                let mut command = Command::new("yt-dlp");
                 command
                     .arg("-f")
                     .arg("bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best")
@@ -533,7 +530,7 @@ impl<'a> Downloader<'a> {
                     media_skipped += 1;
                 }
             } else {
-                warn!("youtube-dl or compatible fork is not installed, skipping youtube video download: {}", media_url);
+                warn!("yt-dlp is not installed, skipping youtube video download: {}", media_url);
             }
         } else {
             info!("Media available at URL: {}", &media_url);
