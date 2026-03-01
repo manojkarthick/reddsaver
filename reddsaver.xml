@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>reddsaver</Name>
+  <Repository>ghcr.io/manojkarthick/reddsaver:latest</Repository>
+  <Registry>https://github.com/manojkarthick/reddsaver/pkgs/container/reddsaver</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/manojkarthick/reddsaver/issues</Support>
+  <Project>https://github.com/manojkarthick/reddsaver</Project>
+  <Overview>Command line tool to download saved and upvoted media from Reddit. Supports images (JPG/PNG), GIFs, image galleries, and videos from Reddit, Imgur, Gfycat/Redgifs, Giphy, and YouTube.</Overview>
+  <Category>Downloaders:</Category>
+  <WebUI/>
+  <TemplateURL>https://raw.githubusercontent.com/manojkarthick/reddsaver/master/reddsaver.xml</TemplateURL>
+  <Icon/>
+  <ExtraParams/>
+  <PostArgs>--data-dir /data/downloads --from-env /config/reddsaver.env</PostArgs>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Description>Command line tool to download saved and upvoted media from Reddit. Supports images (JPG/PNG), GIFs, image galleries, and videos from Reddit, Imgur, Gfycat/Redgifs, Giphy, and YouTube.[br][br]Before starting, create a Reddit script app at https://www.reddit.com/prefs/apps and place a reddsaver.env file in your appdata directory with the following contents:[br][br]REDDSAVER_CLIENT_ID='your_client_id'[br]REDDSAVER_CLIENT_SECRET='your_client_secret'[br]REDDSAVER_USERNAME='your_username'[br]REDDSAVER_PASSWORD='your_password'</Description>
+  <Config
+    Name="Data Directory"
+    Target="/data/downloads"
+    Default="/mnt/user/data/reddsaver/"
+    Mode="rw"
+    Description="Directory where downloaded media will be saved."
+    Type="Path"
+    Display="always"
+    Required="true"
+    Mask="false">/mnt/user/data/reddsaver/</Config>
+  <Config
+    Name="AppData (Config)"
+    Target="/config"
+    Default="/mnt/user/appdata/reddsaver/"
+    Mode="ro"
+    Description="Path to the appdata directory containing your reddsaver.env credentials file."
+    Type="Path"
+    Display="always"
+    Required="true"
+    Mask="false">/mnt/user/appdata/reddsaver/</Config>
+</Container>
