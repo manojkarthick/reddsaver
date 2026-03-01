@@ -122,8 +122,6 @@ reddsaver -e reddsaver.env -d data --show-config
 reddsaver -e reddsaver.env -d data
 
 # Download upvoted media instead
-reddsaver -e reddsaver.env -d data --upvoted
-# or equivalently:
 reddsaver -e reddsaver.env -d data --mode upvoted
 
 # Download from a subreddit's hot feed (default listing type, limit 1000)
@@ -160,7 +158,6 @@ Options:
   -s, --show-config              Show the current config being used
   -r, --dry-run                  Dry run and print the URLs of saved media to download
   -S, --subreddits <SUBREDDITS>  Subreddits to filter (saved/upvoted) or fetch from (feed mode)
-  -u, --upvoted                  Download media from upvoted posts (alias for --mode upvoted)
   -m, --mode <MODE>              Operation mode [default: saved] [possible values: saved, upvoted, feed]
   -t, --listing-type <TYPE>      Subreddit listing sort [default: hot] [possible values: hot, top, new, controversial]
   -T, --time-filter <PERIOD>     Time period for top/controversial listings [default: all] [possible values: hour, day, week, month, year, all]
@@ -174,7 +171,7 @@ Options:
 | Mode | Flag | Description |
 |------|------|-------------|
 | `saved` | `--mode saved` (default) | Download media from your saved posts |
-| `upvoted` | `--mode upvoted` or `--upvoted` | Download media from your upvoted posts |
+| `upvoted` | `--mode upvoted` | Download media from your upvoted posts |
 | `feed` | `--mode feed` | Download media from a subreddit's listing feed |
 
 ### Feed mode options

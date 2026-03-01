@@ -91,13 +91,6 @@ fn cli() -> Command {
                 .help("Download media from these subreddits only"),
         )
         .arg(
-            Arg::new("upvoted")
-                .short('u')
-                .long("upvoted")
-                .action(ArgAction::SetTrue)
-                .help("Download media from upvoted posts (alias for --mode upvoted)"),
-        )
-        .arg(
             Arg::new("mode")
                 .short('m')
                 .long("mode")
@@ -149,17 +142,7 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
     let subreddits: Option<Vec<&str>> =
         matches.get_many::<String>("subreddits").map(|vals| vals.map(|s| s.as_str()).collect());
 
-    // Resolve mode: --upvoted flag is a backwards-compatible alias for --mode upvoted.
-    let upvoted_flag = matches.get_flag("upvoted");
-    let mode_str = matches.get_one::<String>("mode").map(|s| s.as_str()).unwrap_or("saved");
-
-    if upvoted_flag && mode_str == "feed" {
-        return Err(ReddSaverError::InvalidArgument(
-            "--upvoted and --mode feed are mutually exclusive".to_string(),
-        ));
-    }
-
-    let effective_mode = if upvoted_flag { "upvoted" } else { mode_str };
+    let effective_mode = matches.get_one::<String>("mode").map(|s| s.as_str()).unwrap_or("saved");
 
     // Parse listing-type and time-filter (only meaningful in feed mode)
     let listing_type_str =
