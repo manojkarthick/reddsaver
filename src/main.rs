@@ -104,10 +104,10 @@ async fn main() -> Result<(), ReddSaverError> {
     let env = Env::default().filter("RS_LOG").default_filter_or("info");
     env_logger::Builder::from_env(env).init();
 
-    let client_id = env::var("CLIENT_ID")?;
-    let client_secret = env::var("CLIENT_SECRET")?;
-    let username = env::var("USERNAME")?;
-    let password = env::var("PASSWORD")?;
+    let client_id = env::var("REDDSAVER_CLIENT_ID")?;
+    let client_secret = env::var("REDDSAVER_CLIENT_SECRET")?;
+    let username = env::var("REDDSAVER_USERNAME")?;
+    let password = env::var("REDDSAVER_PASSWORD")?;
     let user_agent = get_user_agent_string(None, None);
 
     if !check_path_present(&data_directory) {
@@ -119,10 +119,10 @@ async fn main() -> Result<(), ReddSaverError> {
         info!("Current configuration:");
         info!("ENVIRONMENT_FILE = {}", &env_file);
         info!("DATA_DIRECTORY = {}", &data_directory);
-        info!("CLIENT_ID = {}", &client_id);
-        info!("CLIENT_SECRET = {}", mask_sensitive(&client_secret));
-        info!("USERNAME = {}", &username);
-        info!("PASSWORD = {}", mask_sensitive(&password));
+        info!("REDDSAVER_CLIENT_ID = {}", &client_id);
+        info!("REDDSAVER_CLIENT_SECRET = {}", mask_sensitive(&client_secret));
+        info!("REDDSAVER_USERNAME = {}", &username);
+        info!("REDDSAVER_PASSWORD = {}", mask_sensitive(&password));
         info!("USER_AGENT = {}", &user_agent);
         info!("SUBREDDITS = {}", print_subreddits(&subreddits));
         info!("UPVOTED = {}", upvoted);

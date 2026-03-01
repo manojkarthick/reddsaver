@@ -98,16 +98,13 @@ docker run --rm \
 2. Create a `.env` file (e.g. `reddsaver.env`) with your credentials:
 
 ```shell
-CLIENT_ID="<client_id>"
-CLIENT_SECRET="<client_secret>"
-USERNAME="<username>"
-PASSWORD="<password>"
+REDDSAVER_CLIENT_ID="<client_id>"
+REDDSAVER_CLIENT_SECRET="<client_secret>"
+REDDSAVER_USERNAME="<username>"
+REDDSAVER_PASSWORD="<password>"
 ```
 
-> If you have 2FA enabled: `PASSWORD=<password>:<2FA_TOTP_token>`
-
-> If the tool seems to be picking up your system username instead of your Reddit username, clear it first:
-> `unset USERNAME` (macOS/Linux) or `set USERNAME=` (Windows)
+> If you have 2FA enabled: `REDDSAVER_PASSWORD=<password>:<2FA_TOTP_token>`
 
 ## Usage
 
