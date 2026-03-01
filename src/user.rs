@@ -4,7 +4,6 @@ use crate::structures::{Listing, UserAbout};
 use crate::utils::get_user_agent_string;
 use log::{debug, info};
 use reqwest::header::USER_AGENT;
-use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -96,17 +95,17 @@ impl<'a> User<'a> {
             // total number of items processed by the method
             // note that not all of these items are media, so the downloaded media will be
             // lesser than or equal to the number of items present
-            processed += response.borrow().data.dist;
+            processed += response.data.dist;
             info!("Number of items processed : {}", processed);
 
             // if there is a response, continue collecting them into a vector
-            if response.borrow().data.after.as_ref().is_none() {
+            if response.data.after.as_ref().is_none() {
                 info!("Data gathering complete. Yay.");
                 listing.push(response);
                 complete = true;
             } else {
-                debug!("Processing till: {}", response.borrow().data.after.as_ref().unwrap());
-                after = response.borrow().data.after.clone();
+                debug!("Processing till: {}", response.data.after.as_ref().unwrap());
+                after = response.data.after.clone();
                 listing.push(response);
             }
         }

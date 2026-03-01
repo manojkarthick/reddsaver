@@ -41,6 +41,7 @@ pub struct UserAbout {
     pub data: AboutData,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 pub struct Listing {
     /// The kind of object this is. eg: Comment, Account, Subreddit, etc.
@@ -51,6 +52,7 @@ pub struct Listing {
 }
 
 /// The contents of a call to a 'listing' endpoint.
+#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 pub struct ListingData {
     /// A modhash (essentially a CSRF token) generated for this request. This is generally
@@ -62,6 +64,7 @@ pub struct ListingData {
     pub dist: i32,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug, Clone)]
 pub struct Post {
     /// The kind of object this is. eg: Comment, Account, Subreddit, etc.
@@ -71,6 +74,7 @@ pub struct Post {
 }
 
 /// Represents all types of link posts and self posts on Reddit.
+#[allow(dead_code)]
 #[derive(Deserialize, Debug, Clone)]
 pub struct PostData {
     pub subreddit: String,
@@ -120,6 +124,7 @@ pub struct PostMedia {
     pub reddit_video: Option<RedditVideo>,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug, Clone)]
 pub struct RedditVideo {
     pub fallback_url: String,
@@ -132,6 +137,7 @@ pub struct GalleryItems {
     pub items: Vec<GalleryItem>,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug, Clone)]
 pub struct GalleryItem {
     /// The reddit media id, can be used to construct a redd.it URL
@@ -146,6 +152,7 @@ pub struct GfyData {
     pub gfy_item: GfyItem,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Debug, Clone)]
 pub struct GfyItem {
     #[serde(rename = "gifUrl")]

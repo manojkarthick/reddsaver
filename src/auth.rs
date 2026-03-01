@@ -1,5 +1,6 @@
 use crate::errors::ReddSaverError;
 
+use base64::{engine::general_purpose::STANDARD, Engine};
 use log::debug;
 use reqwest::header::{AUTHORIZATION, USER_AGENT};
 use serde::{Deserialize, Serialize};
@@ -49,7 +50,7 @@ impl<'a> Client<'a> {
     }
 
     pub async fn login(&self) -> Result<Auth, ReddSaverError> {
-        let basic_token = base64::encode(format!("{}:{}", self.client_id, self.client_secret));
+        let basic_token = STANDARD.encode(format!("{}:{}", self.client_id, self.client_secret));
         let grant_type = String::from("password");
 
         let mut body = HashMap::new();

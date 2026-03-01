@@ -19,7 +19,9 @@ use crate::errors::ReddSaverError;
 use crate::structures::{GfyData, PostData};
 use crate::structures::{Listing, Summary};
 use crate::user::{ListingType, User};
-use crate::utils::{check_path_present, check_url_is_mp4};
+use async_once::AsyncOnce;
+
+use crate::utils::{check_path_present, check_url_is_mp4, fetch_redgif_token, fetch_redgif_url};
 
 static JPG_EXTENSION: &str = "jpg";
 static PNG_EXTENSION: &str = "png";
@@ -36,7 +38,8 @@ static IMGUR_DOMAIN: &str = "imgur.com";
 static IMGUR_SUBDOMAIN: &str = "i.imgur.com";
 
 static GFYCAT_DOMAIN: &str = "gfycat.com";
-static GFYCAT_API_PREFIX: &str = "https://api.gfycat.com/v1/gfycats";
+// GfyCat shut down Sept 2023; their v1 API calls still work via the RedGifs endpoint
+static GFYCAT_API_PREFIX: &str = "https://api.redgifs.com/v1/gfycats";
 
 static REDGIFS_DOMAIN: &str = "redgifs.com";
 static REDGIFS_API_PREFIX: &str = "https://api.redgifs.com/v1/gfycats";
@@ -57,6 +60,12 @@ lazy_static! {
         Regex::new(r"^https?://youtu\.be/(?P<video_id>([\w-]+))$").unwrap();
 }
 
+lazy_static! {
+    static ref RG_TOKEN: AsyncOnce<String> = AsyncOnce::new(async {
+        fetch_redgif_token().await.unwrap()
+    });
+}
+
 /// Status of media processing
 enum MediaStatus {
     /// If we are able to successfully download the media
@@ -75,6 +84,7 @@ enum MediaType {
     RedditVideoWithAudio,
     RedditVideoWithoutAudio,
     GfycatGif,
+    RedgifsVideo,
     GiphyGif,
     ImgurImage,
     ImgurGif,
@@ -542,15 +552,18 @@ impl<'a> Downloader<'a> {
     async fn download_other_media(
         &self,
         media_url: &String,
-        _media_type: MediaType,
+        media_type: MediaType,
         post_metadata: &PostMetadata<'_>,
     ) -> Result<(i32, i32), ReddSaverError> {
         let mut media_downloaded = 0;
         let mut media_skipped = 0;
 
         let index = "0";
-        let extension =
-            String::from(media_url.split('.').last().unwrap_or("unknown")).replace("/", "_");
+        let extension = if media_type == MediaType::RedgifsVideo {
+            String::from("mp4")
+        } else {
+            String::from(media_url.split('.').last().unwrap_or("unknown")).replace("/", "_")
+        };
 
         let file_name = self.generate_file_name(
             &media_url,
@@ -607,7 +620,11 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
         Err(_e) => return Err(ReddSaverError::CouldNotCreateDirectory),
     }
 
-    let maybe_response = reqwest::get(url).await;
+    let maybe_response: reqwest::Result<reqwest::Response> = if url.contains(REDGIFS_DOMAIN) {
+        fetch_redgif_url(RG_TOKEN.get().await, url).await
+    } else {
+        reqwest::get(url).await
+    };
     if let Ok(response) = maybe_response {
         debug!("URL Response: {:#?}", response);
         let maybe_data = response.bytes().await;
@@ -809,9 +826,8 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
             }
         }
 
-        // gfycat and redgifs
-        if url.contains(GFYCAT_DOMAIN) || url.contains(REDGIFS_DOMAIN) {
-            // if the Gfycat/Redgifs URL points directly to the mp4, download as is
+        // gfycat (shut down, but v1 API still reachable via RedGifs endpoint)
+        if url.contains(GFYCAT_DOMAIN) {
             if url.ends_with(MP4_EXTENSION) {
                 let supported_media = SupportedMedia {
                     components: vec![String::from(url)],
@@ -819,14 +835,20 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
                 };
                 media.push(supported_media);
             } else {
-                // if the provided link is a gfycat post link, use the gfycat API
-                // to get the URL. gfycat likes to use lowercase names in their posts
-                // but the ID for the GIF is Pascal-cased. The case-conversion info
-                // can only be obtained from the API at the moment
                 if let Some(supported_media) = gfy_to_mp4(url).await? {
                     media.push(supported_media);
                 }
             }
+        }
+
+        // redgifs — authenticated v2 pipeline; pass the original URL through as-is,
+        // download_media() will route it through fetch_redgif_url()
+        if url.contains(REDGIFS_DOMAIN) {
+            debug!("Found RG url {}", url);
+            media.push(SupportedMedia {
+                components: vec![String::from(url)],
+                media_type: MediaType::RedgifsVideo,
+            });
         }
 
         // giphy

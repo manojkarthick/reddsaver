@@ -1,11 +1,20 @@
 use crate::errors::ReddSaverError;
+use log::debug;
 use mime::Mime;
 use rand::Rng;
 use random_names::RandomName;
 use reqwest::header::CONTENT_TYPE;
+use serde_json::Value;
 use std::path::Path;
 use std::str::FromStr;
 use which::which;
+
+// RedGifs requires the same User-Agent for both token fetch and media fetch calls
+static LOC_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15";
+// RedGifs v2 auth endpoint — returns a temporary bearer token
+static RG_API_URL: &str = "https://api.redgifs.com/v2/auth/temporary";
+// RedGifs v2 gif-info endpoint — returns JSON with the actual HD mp4 URL
+static RG_GIFLOC_URL: &str = "https://api.redgifs.com/v2/gifs";
 
 /// Generate user agent string of the form <name>:<version>.
 /// If no arguments passed generate random name and number
@@ -57,6 +66,67 @@ pub fn application_present(name: String) -> bool {
         Ok(_) => true,
         _ => false,
     }
+}
+
+/// Fetch a temporary bearer token from the RedGifs v2 auth endpoint
+pub async fn fetch_redgif_token() -> Result<String, ReddSaverError> {
+    let response = reqwest::Client::new()
+        .get(RG_API_URL)
+        .header("User-Agent", LOC_AGENT)
+        .send()
+        .await?
+        .text()
+        .await?;
+    let resp_data: Value = serde_json::from_str(&response).unwrap();
+    let tok_val = resp_data["token"].as_str();
+    let token = match tok_val {
+        Some(t) => t,
+        None => return Err(ReddSaverError::CouldNotSaveImageError("".to_string())),
+    };
+    Ok(format!("Bearer {}", token))
+}
+
+/// Resolve a RedGifs URL to the actual HD mp4 response using the v2 API
+pub async fn fetch_redgif_url(rg_token: &str, orig_url: &str) -> reqwest::Result<reqwest::Response> {
+    // RedGifs has two URL styles:
+    //   older: thumbs44.redgifs.com/Token-mobile.mp4?hash=…
+    //   newer: thumbs44.redgifs.com/watch/tokenname  OR  redgifs.com/watch/tokenname
+    let re_old = regex::Regex::new(r"/([A-Za-z]+)-mobile\.mp4").unwrap();
+    let re_new = regex::Regex::new(r"/(?:watch/)?([A-Za-z]+)(?:[^/]*)$").unwrap();
+
+    let gif_id = if let Some(caps) = re_old.captures(orig_url) {
+        caps[1].to_string()
+    } else if let Some(caps) = re_new.captures(orig_url) {
+        caps[1].to_string()
+    } else {
+        String::new()
+    };
+
+    debug!("RedGifs gif ID: {}", gif_id);
+
+    let client = reqwest::Client::new();
+    let api_url = format!("{}/{}", RG_GIFLOC_URL, gif_id.to_lowercase());
+    debug!("RedGifs API URL: {}", api_url);
+
+    let api_resp = client
+        .get(&api_url)
+        .header("User-Agent", LOC_AGENT)
+        .header("Authorization", rg_token)
+        .send()
+        .await?
+        .text()
+        .await?;
+
+    let api_data: Value = serde_json::from_str(&api_resp).unwrap_or(Value::Null);
+    let hd_url = api_data["gif"]["urls"]["hd"].as_str().unwrap_or("http://127.0.0.1/invalid");
+    debug!("RedGifs HD URL: {}", hd_url);
+
+    client
+        .get(hd_url)
+        .header("User-Agent", LOC_AGENT)
+        .header("Authorization", rg_token)
+        .send()
+        .await
 }
 
 /// Check if the given URL contains an MP4 track using the content type

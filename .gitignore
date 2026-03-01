@@ -8,3 +8,6 @@ reddsaver/
 .envrc
 mock/
 test-data/
+./downloads
+./downloads-v2
+
