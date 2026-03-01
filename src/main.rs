@@ -123,7 +123,14 @@ fn cli() -> Command {
                 .long("limit")
                 .value_name("LIMIT")
                 .value_parser(clap::value_parser!(usize))
-                .help("Max posts to process per source (default: unlimited for saved/upvoted, 500 for feed)"),
+                .help("Max posts to process per source (default: unlimited for saved/upvoted, 500 for feed/user)"),
+        )
+        .arg(
+            Arg::new("target_user")
+                .short('u')
+                .long("user")
+                .value_name("USERNAME")
+                .help("Reddit username to download submissions from (required for user mode)"),
         )
 }
 
@@ -143,6 +150,7 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
         matches.get_many::<String>("subreddits").map(|vals| vals.map(|s| s.as_str()).collect());
 
     let mode = matches.get_one::<Mode>("mode").cloned().unwrap_or(Mode::Saved);
+    let target_user: Option<String> = matches.get_one::<String>("target_user").cloned();
 
     // Parse listing-type and time-filter (only meaningful in feed mode)
     let listing_type = matches.get_one::<SubredditSort>("listing_type").cloned().unwrap_or(SubredditSort::Hot);
@@ -150,7 +158,7 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
 
     // Validate that listing-type / time-filter are not used outside feed mode.
     // For time-filter, we only care whether the user passed the flag explicitly.
-    if mode != Mode::Feed {
+    if !matches!(mode, Mode::Feed | Mode::User) {
         let listing_type_explicit = listing_type != SubredditSort::Hot
             && matches.value_source("listing_type") == Some(clap::parser::ValueSource::CommandLine);
         let time_filter_explicit =
@@ -158,14 +166,28 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
 
         if listing_type_explicit {
             return Err(ReddSaverError::InvalidArgument(
-                "--listing-type is only valid with --mode feed".to_string(),
+                "--listing-type is only valid with --mode feed or --mode user".to_string(),
             ));
         }
         if time_filter_explicit {
             return Err(ReddSaverError::InvalidArgument(
-                "--time-filter is only valid with --mode feed".to_string(),
+                "--time-filter is only valid with --mode feed or --mode user".to_string(),
             ));
         }
+    }
+
+    // In user mode, --user is required
+    if mode == Mode::User && target_user.is_none() {
+        return Err(ReddSaverError::InvalidArgument(
+            "--mode user requires a username via --user".to_string(),
+        ));
+    }
+
+    // --user is only valid with user mode
+    if mode != Mode::User && target_user.is_some() {
+        return Err(ReddSaverError::InvalidArgument(
+            "--user is only valid with --mode user".to_string(),
+        ));
     }
 
     // In feed mode, --subreddits is required
@@ -177,7 +199,7 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
 
     let time_filter_explicit =
         matches.value_source("time_filter") == Some(clap::parser::ValueSource::CommandLine);
-    if mode == Mode::Feed
+    if matches!(mode, Mode::Feed | Mode::User)
         && time_filter_explicit
         && !matches!(listing_type, SubredditSort::Top | SubredditSort::Controversial)
     {
@@ -187,7 +209,7 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
     // Determine effective limit
     let explicit_limit: Option<usize> = matches.get_one::<usize>("limit").copied();
     let effective_limit: Option<usize> = match mode {
-        Mode::Feed => Some(explicit_limit.unwrap_or(500)),
+        Mode::Feed | Mode::User => Some(explicit_limit.unwrap_or(500)),
         _ => explicit_limit, // None means unlimited for saved/upvoted
     };
 
@@ -217,6 +239,9 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
         info!("USER_AGENT = {}", &user_agent);
         info!("SUBREDDITS = {}", print_subreddits(&subreddits));
         info!("MODE = {}", mode);
+        if let Some(ref tu) = target_user {
+            info!("TARGET_USER = {}", tu);
+        }
         info!("LISTING_TYPE = {}", listing_type);
         info!("TIME_FILTER = {}", time_filter);
         info!(
@@ -274,6 +299,12 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
                 all_listings.append(&mut sub_listing);
             }
             all_listings
+        }
+        Mode::User => {
+            let target = target_user.as_ref().unwrap();
+            let limit = effective_limit.unwrap();
+            info!("Fetching submissions from u/{} ({}, limit {})", target, listing_type, limit);
+            user.user_listing(target, &listing_type, period, limit).await?
         }
         Mode::Saved => user.listing(&ListingType::Saved, effective_limit).await?,
         Mode::Upvoted => user.listing(&ListingType::Upvoted, effective_limit).await?,
