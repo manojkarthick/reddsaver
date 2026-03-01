@@ -77,7 +77,7 @@ enum MediaStatus {
 }
 
 /// Media Types Supported
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 enum MediaType {
     RedditImage,
     RedditGif,
@@ -247,12 +247,20 @@ impl<'a> Downloader<'a> {
                                     .await?
                                 }
                                 _ => {
-                                    self.download_other_media(
-                                        media_urls.first().unwrap(),
-                                        media_type,
-                                        &post_metadata,
-                                    )
-                                    .await?
+                                    let mut downloaded = 0;
+                                    let mut skipped = 0;
+                                    for url in media_urls.iter() {
+                                        let (d, s) = self
+                                            .download_other_media(
+                                                url,
+                                                media_type.clone(),
+                                                &post_metadata,
+                                            )
+                                            .await?;
+                                        downloaded += d;
+                                        skipped += s;
+                                    }
+                                    (downloaded, skipped)
                                 }
                             };
 
