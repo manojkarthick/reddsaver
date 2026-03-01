@@ -104,7 +104,7 @@ fn cli() -> Command {
                 .short('t')
                 .long("listing-type")
                 .value_name("TYPE")
-                .value_parser(["hot", "top", "new", "controversial"])
+                .value_parser(clap::value_parser!(SubredditSort))
                 .default_value("hot")
                 .help("Subreddit listing sort"),
         )
@@ -113,7 +113,7 @@ fn cli() -> Command {
                 .short('T')
                 .long("time-filter")
                 .value_name("PERIOD")
-                .value_parser(["hour", "day", "week", "month", "year", "all"])
+                .value_parser(clap::value_parser!(TimePeriod))
                 .default_value("all")
                 .help("Time period for top/controversial listings"),
         )
@@ -145,17 +145,15 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
     let effective_mode = matches.get_one::<String>("mode").map(|s| s.as_str()).unwrap_or("saved");
 
     // Parse listing-type and time-filter (only meaningful in feed mode)
-    let listing_type_str =
-        matches.get_one::<String>("listing_type").map(|s| s.as_str()).unwrap_or("hot");
-    let time_filter_str =
-        matches.get_one::<String>("time_filter").map(|s| s.as_str()).unwrap_or("all");
+    let listing_type = matches.get_one::<SubredditSort>("listing_type").cloned().unwrap_or(SubredditSort::Hot);
+    let time_filter = matches.get_one::<TimePeriod>("time_filter").cloned().unwrap_or(TimePeriod::All);
 
     // Validate that listing-type / time-filter are not used outside feed mode.
     // We detect "explicit" use by checking whether the value differs from the default.
     if effective_mode != "feed" {
-        let listing_type_explicit = listing_type_str != "hot"
+        let listing_type_explicit = listing_type != SubredditSort::Hot
             && matches.value_source("listing_type") == Some(clap::parser::ValueSource::CommandLine);
-        let time_filter_explicit = time_filter_str != "all"
+        let time_filter_explicit = time_filter != TimePeriod::All
             && matches.value_source("time_filter") == Some(clap::parser::ValueSource::CommandLine);
 
         if listing_type_explicit {
@@ -184,22 +182,8 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
         _ => explicit_limit, // None means unlimited for saved/upvoted
     };
 
-    let sort = match listing_type_str {
-        "top" => SubredditSort::Top,
-        "new" => SubredditSort::New,
-        "controversial" => SubredditSort::Controversial,
-        _ => SubredditSort::Hot,
-    };
-
-    let period: Option<TimePeriod> = match listing_type_str {
-        "top" | "controversial" => Some(match time_filter_str {
-            "hour" => TimePeriod::Hour,
-            "day" => TimePeriod::Day,
-            "week" => TimePeriod::Week,
-            "month" => TimePeriod::Month,
-            "year" => TimePeriod::Year,
-            _ => TimePeriod::All,
-        }),
+    let period = match listing_type {
+        SubredditSort::Top | SubredditSort::Controversial => Some(&time_filter),
         _ => None,
     };
 
@@ -224,8 +208,8 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
         info!("USER_AGENT = {}", &user_agent);
         info!("SUBREDDITS = {}", print_subreddits(&subreddits));
         info!("MODE = {}", effective_mode);
-        info!("LISTING_TYPE = {}", listing_type_str);
-        info!("TIME_FILTER = {}", time_filter_str);
+        info!("LISTING_TYPE = {}", listing_type);
+        info!("TIME_FILTER = {}", time_filter);
         info!(
             "LIMIT = {}",
             effective_limit.map(|n| n.to_string()).unwrap_or_else(|| "unlimited".to_string())
@@ -275,9 +259,9 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
             let limit = effective_limit.unwrap(); // always Some in subreddit mode
             let mut all_listings = Vec::new();
             for sub in subreddits_list {
-                info!("Fetching r/{} ({}, limit {})", sub, sort, limit);
+                info!("Fetching r/{} ({}, limit {})", sub, listing_type, limit);
                 let mut sub_listing =
-                    user.subreddit_listing(sub, &sort, period.as_ref(), limit).await?;
+                    user.subreddit_listing(sub, &listing_type, period, limit).await?;
                 all_listings.append(&mut sub_listing);
             }
             // subreddits filter not needed — we already fetched per-subreddit

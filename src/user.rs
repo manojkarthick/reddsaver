@@ -31,7 +31,7 @@ impl Display for ListingType {
 }
 
 /// Sort order for subreddit feed listings.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, clap::ValueEnum)]
 pub enum SubredditSort {
     Hot,
     Top,
@@ -51,7 +51,7 @@ impl Display for SubredditSort {
 }
 
 /// Time period filter for top/controversial subreddit listings.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, clap::ValueEnum)]
 pub enum TimePeriod {
     Hour,
     Day,
