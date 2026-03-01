@@ -116,6 +116,9 @@ pub struct PostData {
     pub created_utc: Value,
     /// Gallery metadata
     pub gallery_data: Option<GalleryItems>,
+    /// Per-item metadata for gallery posts, keyed by media_id.
+    /// Each entry contains (among other fields) "m": the MIME type (e.g. "image/jpg").
+    pub media_metadata: Option<HashMap<String, Value>>,
     /// Is post a video?
     pub is_video: Option<bool>,
     /// Reddit Media info

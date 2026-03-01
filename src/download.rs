@@ -22,9 +22,8 @@ use async_once::AsyncOnce;
 
 use crate::utils::{check_path_present, check_url_is_mp4, fetch_redgif_token, fetch_redgif_url};
 
-static JPG_EXTENSION: &str = "jpg";
-static PNG_EXTENSION: &str = "png";
 static GIF_EXTENSION: &str = "gif";
+static IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp"];
 static GIFV_EXTENSION: &str = "gifv";
 static MP4_EXTENSION: &str = "mp4";
 
@@ -733,8 +732,8 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
         // reddit images and gifs
         if url.contains(REDDIT_IMAGE_SUBDOMAIN) {
             // if the URL uses the reddit image subdomain and if the extension is
-            // jpg, png or gif, then we can use the URL as is.
-            if url.ends_with(JPG_EXTENSION) || url.ends_with(PNG_EXTENSION) {
+            // a supported image format (jpg, jpeg, png, webp), then we can use the URL as is.
+            if IMAGE_EXTENSIONS.iter().any(|ext| url.ends_with(ext)) {
                 let translated = String::from(url);
                 let supported_media = SupportedMedia {
                     components: vec![translated],
@@ -783,10 +782,19 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
                 // collect all the URLs for the images in the album
                 let mut image_urls = Vec::new();
                 for item in gallery.items.iter() {
-                    // extract the media ID from each gallery item and reconstruct the image URL
+                    // derive the extension from media_metadata ("m" is the MIME type,
+                    // e.g. "image/jpg", "image/png", "image/webp"). Fall back to "jpg".
+                    let ext = data.media_metadata
+                        .as_ref()
+                        .and_then(|mm| mm.get(&item.media_id))
+                        .and_then(|v| v.get("m"))
+                        .and_then(|m| m.as_str())
+                        .and_then(|mime| mime.split('/').last())
+                        .map(|sub| if sub == "jpeg" { "jpg" } else { sub })
+                        .unwrap_or("jpg");
                     let image_url = format!(
                         "https://{}/{}.{}",
-                        REDDIT_IMAGE_SUBDOMAIN, item.media_id, JPG_EXTENSION
+                        REDDIT_IMAGE_SUBDOMAIN, item.media_id, ext
                     );
                     image_urls.push(image_url);
                 }
@@ -872,7 +880,7 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
                 media.push(supported_media);
             }
             if url.contains(IMGUR_SUBDOMAIN)
-                && (url.ends_with(PNG_EXTENSION) || url.ends_with(JPG_EXTENSION))
+                && IMAGE_EXTENSIONS.iter().any(|ext| url.ends_with(ext))
             {
                 let supported_media = SupportedMedia {
                     components: vec![String::from(url)],
