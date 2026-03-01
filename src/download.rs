@@ -57,12 +57,12 @@ static YOUTUBE_SHORT_DOMAIN: &str = "youtu.be";
 
 lazy_static! {
     static ref YOUTUBE_RE: Regex =
-        Regex::new(r"^https?://youtu\.be/(?P<video_id>([\w-]+))$").unwrap();
+        Regex::new(r"^https?://youtu\.be/(?P<video_id>([\w-]+))$").expect("valid regex");
 }
 
 lazy_static! {
     static ref RG_TOKEN: AsyncOnce<String> =
-        AsyncOnce::new(async { fetch_redgif_token().await.unwrap() });
+        AsyncOnce::new(async { fetch_redgif_token().await.expect("failed to fetch RedGifs auth token") });
 }
 
 /// Status of media processing
@@ -223,7 +223,7 @@ impl<'a> Downloader<'a> {
                             };
 
                             // the number of components in the supported media is the number available for download
-                            summary_arc.lock().unwrap().media_supported += num_components;
+                            summary_arc.lock().expect("summary mutex poisoned").media_supported += num_components;
 
                             let media_info = match media_type {
                                 MediaType::RedditVideoWithAudio
@@ -236,11 +236,15 @@ impl<'a> Downloader<'a> {
                                     .await?
                                 }
                                 MediaType::YoutubeVideo => {
-                                    self.download_youtube_video(
-                                        media_urls.first().unwrap(),
-                                        &post_metadata,
-                                    )
-                                    .await?
+                                    if let Some(url) = media_urls.first() {
+                                        self.download_youtube_video(
+                                            url,
+                                            &post_metadata,
+                                        )
+                                        .await?
+                                    } else {
+                                        (0, 0)
+                                    }
                                 }
                                 _ => {
                                     let mut downloaded = 0;
@@ -261,7 +265,7 @@ impl<'a> Downloader<'a> {
                             };
 
                             {
-                                let mut s = summary_arc.lock().unwrap();
+                                let mut s = summary_arc.lock().expect("summary mutex poisoned");
                                 s.media_downloaded += media_info.0;
                                 s.media_skipped += media_info.1;
                                 let entry =
@@ -285,7 +289,7 @@ impl<'a> Downloader<'a> {
             .try_collect::<()>()
             .await?;
 
-        let local_summary = summary.lock().unwrap().clone();
+        let local_summary = summary.lock().expect("summary mutex poisoned").clone();
 
         debug!("Collection statistics: ");
         debug!("Number of supported media: {}", local_summary.media_supported);
@@ -387,7 +391,7 @@ impl<'a> Downloader<'a> {
         {
             if self.ffmpeg_available {
                 debug!("Assembling components together");
-                let first_url = media_urls.first().unwrap();
+                let first_url = media_urls.first().expect("checked len == 2");
                 let extension = String::from(first_url.split('.').last().unwrap_or("unknown"));
                 // this generates the name of the media without the component indices
                 // this file name is used for saving the ffmpeg combined file
@@ -433,11 +437,11 @@ impl<'a> Downloader<'a> {
                         // if we encountered an error, we will write logs from ffmpeg into a new log file
                         let log_file_name =
                             self.generate_file_name(first_url, "log", "0", post_metadata);
-                        let err = String::from_utf8(output.stderr).unwrap();
+                        let err = String::from_utf8_lossy(&output.stderr).into_owned();
                         warn!(
                             "Could not combine video {} and audio {}. Saving log to: {}",
-                            media_urls.first().unwrap(),
-                            media_urls.last().unwrap(),
+                            media_urls.first().expect("checked len == 2"),
+                            media_urls.last().expect("checked len == 2"),
                             log_file_name
                         );
                         fs::write(log_file_name, err)?;
@@ -568,7 +572,9 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
     // create directory if it does not already exist
     // the directory is created relative to the current working directory
     let mut status = false;
-    let directory = Path::new(file_name).parent().unwrap();
+    let directory = Path::new(file_name)
+        .parent()
+        .ok_or(ReddSaverError::CouldNotCreateDirectory)?;
     match fs::create_dir_all(directory) {
         Ok(_) => (),
         Err(_e) => return Err(ReddSaverError::CouldNotCreateDirectory),
@@ -672,7 +678,11 @@ async fn get_reddit_video(url: &str) -> Result<Option<SupportedMedia>, ReddSaver
                 Ok(Some(supported_media))
             } else {
                 let all = url.split("/").collect::<Vec<&str>>();
-                let mut result = all.split_last().unwrap().1.to_vec();
+                let (_, prefix) = match all.split_last() {
+                    Some(pair) => pair,
+                    None => return Ok(None),
+                };
+                let mut result = prefix.to_vec();
                 let dash_audio = "DASH_audio.mp4";
                 result.push(dash_audio);
 
@@ -717,7 +727,10 @@ async fn get_reddit_video(url: &str) -> Result<Option<SupportedMedia>, ReddSaver
 
 /// Check if a particular URL contains supported media.
 async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverError> {
-    let original = data.url.as_ref().unwrap();
+    let original = match data.url.as_ref() {
+        Some(u) => u,
+        None => return Ok(Vec::new()),
+    };
     let mut media: Vec<SupportedMedia> = Vec::new();
 
     if let Ok(u) = Url::parse(original) {
@@ -851,7 +864,7 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
                 // if the link points to the giphy post rather than the media link,
                 // use the scheme below to get the actual URL for the gif.
                 let path = &parsed[Position::AfterHost..Position::AfterPath];
-                let media_id = path.split("-").last().unwrap();
+                let media_id = path.split("-").last().unwrap_or("");
                 let supported_media = SupportedMedia {
                     components: vec![format!(
                         "https://media.giphy.com/media/{}.gif",
@@ -889,15 +902,16 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
         if url.contains(YOUTUBE_SHORT_DOMAIN) {
             debug!("The Youtube short URL: {}", url);
 
-            let captures = YOUTUBE_RE.captures(url).unwrap();
-            let video_id = &captures["video_id"];
-            debug!("The youtube video id: {}", video_id);
+            if let Some(captures) = YOUTUBE_RE.captures(url) {
+                let video_id = &captures["video_id"];
+                debug!("The youtube video id: {}", video_id);
 
-            let long = format!("https://www.youtube.com/watch?v={}", video_id);
-            debug!("Short URL: {}, Long URL: {}", url, long);
-            let supported_media =
-                SupportedMedia { components: vec![long], media_type: MediaType::YoutubeVideo };
-            media.push(supported_media);
+                let long = format!("https://www.youtube.com/watch?v={}", video_id);
+                debug!("Short URL: {}, Long URL: {}", url, long);
+                let supported_media =
+                    SupportedMedia { components: vec![long], media_type: MediaType::YoutubeVideo };
+                media.push(supported_media);
+            }
         }
 
         if url.contains(YOUTUBE_DOMAIN) {
