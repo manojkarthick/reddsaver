@@ -1,87 +1,83 @@
 # Reddsaver ![build](https://github.com/manojkarthick/reddsaver/workflows/build/badge.svg) [![Crates.io](https://img.shields.io/crates/v/reddsaver.svg)](https://crates.io/crates/reddsaver)
 
-* Command line tool to download saved/upvoted media from Reddit
-* Supports:
-  - Reddit: PNG/JPG images, GIFs, Image galleries, videos
-  - Giphy: GIFs
-  - Imgur: Direct images and GIFVs
-  - Gfycat/Redgifs: GIFs
-* GIF/GIFV from Imgur/Gfycat/Redgifs are downloaded as mp4
-* Does *not* support downloading images from Imgur post links
+Command line tool to download saved/upvoted media from Reddit.
+
+**Supported sources:**
+| Source | Media types |
+|---|---|
+| Reddit | Images (JPG/PNG), GIFs, image galleries, videos |
+| Imgur | Direct images, GIFVs (downloaded as mp4) |
+| Gfycat / Redgifs | GIFs (downloaded as mp4) |
+| Giphy | GIFs |
+| YouTube | Videos (requires `yt-dlp`) |
+
+> Does *not* support Imgur post/album links — only direct media links.
+
+## Prerequisites
+
+**ffmpeg** — required to merge the separate audio and video streams that Reddit uses for hosted videos.
+Install from https://www.ffmpeg.org/download.html or via your package manager.
+
+**yt-dlp** — required only if you want to download YouTube videos linked in your saved/upvoted posts.
+Install from https://github.com/yt-dlp/yt-dlp or via your package manager.
 
 ## Installation
 
-### Prerequisites 
+### Release binaries
 
-To download videos hosted by Reddit, you need to have ffmpeg installed.
-Follow this [link](https://www.ffmpeg.org/download.html) for installation instructions.
+Download a pre-built binary for your platform from the [releases page](https://github.com/manojkarthick/reddsaver/releases).
 
-### Recommended method
+### MacPorts
 
-You can download release binaries [here](https://github.com/manojkarthick/reddsaver/releases)
-
-### Alternative methods
-
-#### Using MacPorts
-
-If you are a macports user on macOS, you can install reddsaver using `port`:
-
-```
-sudo port selfudpate
+```shell
+sudo port selfupdate
 sudo port install reddsaver
 ```
 
-#### Using Homebrew
-
-If you are a homebrew user on macOS, you can install using `brew tap`:
+### Homebrew
 
 ```shell
 brew tap manojkarthick/reddsaver
 brew install reddsaver
 ```
 
-#### Arch Linux
+### Arch Linux
 
-If you are an ArchLinux user, then you can use a tool like `yay` or `paru` to install it from the [AUR](https://aur.archlinux.org/packages/reddsaver-bin/): 
-```shell script
+```shell
 yay -S reddsaver
 ```
 
-#### Using cargo
+### cargo
 
-If you already have Rust installed, you can also install using `cargo`: 
-```shell script
+```shell
 cargo install reddsaver
 ```
 
-#### Using nix
+### nix
 
-If you are a [nix](https://github.com/NixOS/nix) user, you can install reddsaver from [nixpkgs](https://github.com/NixOS/nixpkgs/blob/master/pkgs/applications/misc/reddsaver/default.nix)
-```shell script
+```shell
 nix-env --install reddsaver
 ```
 
-or, if you manage your installation using [home-manager](https://github.com/nix-community/home-manager), add to your `home.packages`:
-```shell script
-home.packages = [
-    pkgs.reddsaver
-]; 
+Or via [home-manager](https://github.com/nix-community/home-manager):
+
+```nix
+home.packages = [ pkgs.reddsaver ];
 ```
 
-#### Building and running from source
+### Build from source
 
-Make sure you have rustc `v1.50.0` and cargo installed on your machine.
-```shell script
+Requires Rust 1.75.0 or later.
+
+```shell
 git clone https://github.com/manojkarthick/reddsaver.git
 cargo build --release
 ./target/release/reddsaver
 ```
 
-#### Docker support
+### Docker
 
-Pre-built docker images are available on [Docker Hub](https://hub.docker.com/u/manojkarthick) 
- 
-```shell script
+```shell
 mkdir -pv data/
 docker run --rm \
     --volume="$PWD/data:/app/data" \
@@ -89,63 +85,57 @@ docker run --rm \
     manojkarthick/reddsaver:latest -d /app/data -e /app/reddsaver.env
 ```
 
-## Running
+## Setup
 
-1. Create a new script application at https://www.reddit.com/prefs/apps
-    * Click on create an app at the bottom of the page
-    * Input a name for your application, for example: <username>-reddsaver
-    * Choose "script" as the type of application
-    * Set "http://localhost:8080" or any other URL for the redirect url
-    * Click on "create app" - you should now see the application has been created
-    * Under your application name, you should see a random string - that is your client ID
-    * The random string next to the field "secret" is your client secret 
-2. Copy the client ID and client secret information returned
-3. Create a .env file with the following keys, for example `reddsaver.env`:  
-```shell script
+1. Create a Reddit script application at https://www.reddit.com/prefs/apps
+   - Click **create an app** at the bottom of the page
+   - Give it a name (e.g. `<username>-reddsaver`)
+   - Choose **script** as the type
+   - Set any redirect URL (e.g. `http://localhost:8080`)
+   - Click **create app** — the string beneath the app name is your **client ID**; the string next to **secret** is your **client secret**
+
+2. Create a `.env` file (e.g. `reddsaver.env`) with your credentials:
+
+```shell
 CLIENT_ID="<client_id>"
 CLIENT_SECRET="<client_secret>"
 USERNAME="<username>"
 PASSWORD="<password>"
 ```
-_NOTE_: If you have 2FA enabled, please make sure you set `PASSWORD=<password>:<2FA_TOTP_token>` instead
 
-4. Run the app! 
-```shell script
+> If you have 2FA enabled: `PASSWORD=<password>:<2FA_TOTP_token>`
 
-# Create a directory to save your images to
-mkdir -pv reddsaver/
+> If the tool seems to be picking up your system username instead of your Reddit username, clear it first:
+> `unset USERNAME` (macOS/Linux) or `set USERNAME=` (Windows)
 
-# Check if you installation is working properly
-reddsaver --help
+## Usage
 
-# Check if the right configuration has been picked up
-# NOTE: In case the `USERNAME` variable is being overriden by
-# your system username, please use 
-# On Linux/Mac - unset USERNAME
-# On Windows - set USERNAME=
-# before running to temporarily remove the system username
-# from your environment
-reddsaver -e reddsaver.env -d reddsaver --show-config  
+```shell
+# Create a directory to save media to
+mkdir -pv data/
 
-# Run the app to download the saved media
-reddsaver -e reddsaver.env -d reddsaver
+# Verify the configuration is correct
+reddsaver -e reddsaver.env -d data --show-config
 
-# Also allows you to download upvoted media
-reddsaver -e reddsaver.env -d reddsaver --upvoted
+# Download saved media
+reddsaver -e reddsaver.env -d data
+
+# Download upvoted media instead
+reddsaver -e reddsaver.env -d data --upvoted
+
+# Dry run — print URLs without downloading
+reddsaver -e reddsaver.env -d data --dry-run
+
+# Restrict to specific subreddits
+reddsaver -e reddsaver.env -d data --subreddits pics,aww,videos
 ```
 
-NOTE: When running the application beyond the first time, if you use the directory as the initial run, the application will skip downloading the images that have already been downloaded.
+On subsequent runs, files that already exist in the data directory are skipped automatically.
 
-View it in action here: 
+## Command line reference
 
-[![asciicast](https://asciinema.org/a/382339.svg)](https://asciinema.org/a/382339)
-
-## Description and command line arguments
-
-Optionally override the values for the directory to save and the env file to read from:
-
-```shell script
-ReddSaver 0.4.0
+```
+ReddSaver 1.0.0
 Manoj Karthick Selva Kumar
 Simple CLI tool to download saved media from Reddit
 
@@ -153,13 +143,12 @@ USAGE:
     reddsaver [FLAGS] [OPTIONS]
 
 FLAGS:
-    -r, --dry-run           Dry run and print the URLs of saved media to download
-    -h, --help              Prints help information
-    -H, --human-readable    Use human readable names for files
-    -s, --show-config       Show the current config being used
-    -U, --undo              Unsave or remote upvote for post after processing
-    -u, --upvoted           Download media from upvoted posts
-    -V, --version           Prints version information
+    -r, --dry-run       Dry run and print the URLs of saved media to download
+    -h, --help          Prints help information
+    -s, --show-config   Show the current config being used
+    -U, --undo          Unsave or remove upvote for post after processing
+    -u, --upvoted       Download media from upvoted posts
+    -V, --version       Prints version information
 
 OPTIONS:
     -d, --data-dir <DATA_DIR>           Directory to save the media to [default: data]
@@ -167,18 +156,54 @@ OPTIONS:
     -S, --subreddits <SUBREDDITS>...    Download media from these subreddits only
 ```
 
-Some points to note:
+## File naming
 
-* By default, reddsaver generates filenames for the images using a MD5 Hash of the URLs. You can instead generate human readable names using the `--human-readable` flag.
-* You can check the configuration used by ReddSaver by using the `--show-config` flag.
+Downloaded files are named using the format:
 
-## Other Information
+```
+{subreddit}/{author}_{post_id}_{index}_{hash8}.{ext}
+```
 
-### Building for Raspberry Pi Zero W
+- **author** — Reddit username of the poster; files sort naturally by user in any file browser
+- **post_id** — base-36 Reddit post ID; use it to navigate directly to the source post
+- **index** — `0` for single media; `0`, `1`, … for gallery items; `component_0`/`component_1` for Reddit videos with separate audio/video tracks
+- **hash8** — first 8 characters of the MD5 hash of the media URL, used as a collision guard
 
-To cross-compile for raspberry pi, this project uses [rust-cross](https://github.com/rust-embedded/cross). Make sure you have docker installed on your development machine.
+Example: `aww/thunderbird42_abc123_0_f3a8b2c1.jpg`
 
-1. Build the docker image for rust-cross: `docker build -t rust-rpi-zerow:v1-openssl -f Dockerfile.raspberrypizerow .`
-2. Make sure that the image name used here matches the image name in your `Cross.toml` configuration
-3. Run `cross build --target arm-unknown-linux-gnueabi --release` to build the project
-4. You can find the compiled binary under `target/arm-unknown-linux-gnueabi/release/`
+## Utilities
+
+### parse_file.sh
+
+Given any file downloaded by reddsaver, prints the subreddit, username, and a direct link to the source Reddit post.
+
+```shell
+./scripts/parse_file.sh data/aww/thunderbird42_abc123_0_f3a8b2c1.jpg
+# Subreddit: aww
+# Username:  thunderbird42
+# Post link: https://www.reddit.com/r/aww/comments/abc123/
+```
+
+## Download summary
+
+At the end of each run, reddsaver prints a summary broken down by media source:
+
+```
+#####################################
+Download Summary:
+  Total supported:  467
+  Total downloaded: 459
+  Total skipped:    8
+
+  Source                   | Supported | Downloaded | Skipped
+  -----------------------------------------------------------
+  Imgur GIF                |         8 |          8 |       0
+  Imgur Image              |        48 |         48 |       0
+  Reddit GIF               |        14 |         14 |       0
+  Reddit Image             |       320 |        320 |       0
+  Reddit Video (no audio)  |         3 |          3 |       0
+  Redgifs                  |        74 |         66 |       8
+#####################################
+```
+
+Skipped items are either already present on disk or could not be retrieved (a `WARN` log line is printed for each).
