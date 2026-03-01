@@ -10,7 +10,7 @@ use auth::Client;
 
 use crate::download::Downloader;
 use crate::errors::ReddSaverError;
-use crate::user::{ListingType, User};
+use crate::user::{ListingType, SubredditSort, TimePeriod, User};
 use crate::utils::*;
 
 mod auth;
@@ -95,7 +95,42 @@ fn cli() -> Command {
                 .short('u')
                 .long("upvoted")
                 .action(ArgAction::SetTrue)
-                .help("Download media from upvoted posts"),
+                .help("Download media from upvoted posts (alias for --mode upvoted)"),
+        )
+        .arg(
+            Arg::new("mode")
+                .short('m')
+                .long("mode")
+                .value_name("MODE")
+                .value_parser(["saved", "upvoted", "feed"])
+                .default_value("saved")
+                .help("Operation mode"),
+        )
+        .arg(
+            Arg::new("listing_type")
+                .short('t')
+                .long("listing-type")
+                .value_name("TYPE")
+                .value_parser(["hot", "top", "new", "controversial"])
+                .default_value("hot")
+                .help("Subreddit listing sort"),
+        )
+        .arg(
+            Arg::new("time_filter")
+                .short('T')
+                .long("time-filter")
+                .value_name("PERIOD")
+                .value_parser(["hour", "day", "week", "month", "year", "all"])
+                .default_value("all")
+                .help("Time period for top/controversial listings"),
+        )
+        .arg(
+            Arg::new("limit")
+                .short('l')
+                .long("limit")
+                .value_name("LIMIT")
+                .value_parser(clap::value_parser!(usize))
+                .help("Max posts to process per source (default: unlimited for saved/upvoted, 1000 for feed)"),
         )
 }
 
@@ -110,11 +145,84 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
     let ffmpeg_available = application_present(String::from("ffmpeg"));
     // check if yt-dlp is present on the system
     let ytdlp_available = application_present(String::from("yt-dlp"));
-    // restrict downloads to these subreddits
+    // restrict downloads to these subreddits (filter for saved/upvoted; source for feed mode)
     let subreddits: Option<Vec<&str>> =
         matches.get_many::<String>("subreddits").map(|vals| vals.map(|s| s.as_str()).collect());
-    let upvoted = matches.get_flag("upvoted");
-    let listing_type = if upvoted { &ListingType::Upvoted } else { &ListingType::Saved };
+
+    // Resolve mode: --upvoted flag is a backwards-compatible alias for --mode upvoted.
+    let upvoted_flag = matches.get_flag("upvoted");
+    let mode_str = matches.get_one::<String>("mode").map(|s| s.as_str()).unwrap_or("saved");
+
+    if upvoted_flag && mode_str == "feed" {
+        return Err(ReddSaverError::InvalidArgument(
+            "--upvoted and --mode feed are mutually exclusive".to_string(),
+        ));
+    }
+
+    let effective_mode = if upvoted_flag { "upvoted" } else { mode_str };
+
+    // Parse listing-type and time-filter (only meaningful in feed mode)
+    let listing_type_str =
+        matches.get_one::<String>("listing_type").map(|s| s.as_str()).unwrap_or("hot");
+    let time_filter_str =
+        matches.get_one::<String>("time_filter").map(|s| s.as_str()).unwrap_or("all");
+
+    // Validate that listing-type / time-filter are not used outside feed mode.
+    // We detect "explicit" use by checking whether the value differs from the default.
+    if effective_mode != "feed" {
+        let listing_type_explicit =
+            matches.get_one::<String>("listing_type").map(|s| s.as_str()) != Some("hot")
+                && matches.value_source("listing_type")
+                    == Some(clap::parser::ValueSource::CommandLine);
+        let time_filter_explicit =
+            matches.get_one::<String>("time_filter").map(|s| s.as_str()) != Some("all")
+                && matches.value_source("time_filter")
+                    == Some(clap::parser::ValueSource::CommandLine);
+
+        if listing_type_explicit {
+            return Err(ReddSaverError::InvalidArgument(
+                "--listing-type is only valid with --mode feed".to_string(),
+            ));
+        }
+        if time_filter_explicit {
+            return Err(ReddSaverError::InvalidArgument(
+                "--time-filter is only valid with --mode feed".to_string(),
+            ));
+        }
+    }
+
+    // In feed mode, --subreddits is required
+    if effective_mode == "feed" && subreddits.is_none() {
+        return Err(ReddSaverError::InvalidArgument(
+            "--mode feed requires at least one subreddit via --subreddits".to_string(),
+        ));
+    }
+
+    // Determine effective limit
+    let explicit_limit: Option<usize> = matches.get_one::<usize>("limit").copied();
+    let effective_limit: Option<usize> = match effective_mode {
+        "feed" => Some(explicit_limit.unwrap_or(1000)),
+        _ => explicit_limit, // None means unlimited for saved/upvoted
+    };
+
+    let sort = match listing_type_str {
+        "top" => SubredditSort::Top,
+        "new" => SubredditSort::New,
+        "controversial" => SubredditSort::Controversial,
+        _ => SubredditSort::Hot,
+    };
+
+    let period: Option<TimePeriod> = match listing_type_str {
+        "top" | "controversial" => Some(match time_filter_str {
+            "hour" => TimePeriod::Hour,
+            "day" => TimePeriod::Day,
+            "week" => TimePeriod::Week,
+            "month" => TimePeriod::Month,
+            "year" => TimePeriod::Year,
+            _ => TimePeriod::All,
+        }),
+        _ => None,
+    };
 
     let required_env = load_required_env()?;
     let client_id = required_env.client_id;
@@ -136,7 +244,13 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
         info!("REDDSAVER_PASSWORD = {}", mask_sensitive(&password));
         info!("USER_AGENT = {}", &user_agent);
         info!("SUBREDDITS = {}", print_subreddits(&subreddits));
-        info!("UPVOTED = {}", upvoted);
+        info!("MODE = {}", effective_mode);
+        info!("LISTING_TYPE = {}", listing_type_str);
+        info!("TIME_FILTER = {}", time_filter_str);
+        info!(
+            "LIMIT = {}",
+            effective_limit.map(|n| n.to_string()).unwrap_or_else(|| "unlimited".to_string())
+        );
         info!("FFMPEG AVAILABLE = {}", ffmpeg_available);
         info!("YT-DLP AVAILABLE = {}", ytdlp_available);
 
@@ -175,14 +289,38 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
     info!("Link Karma: {:#?}", user_info.data.link_karma);
 
     info!("Starting data gathering from Reddit. This might take some time. Hold on....");
-    // get the saved/upvoted posts for this particular user
-    let listing = user.listing(listing_type).await?;
+
+    let (listing, downloader_subreddits) = match effective_mode {
+        "feed" => {
+            let subreddits_list = subreddits.as_ref().unwrap();
+            let limit = effective_limit.unwrap(); // always Some in subreddit mode
+            let mut all_listings = Vec::new();
+            for sub in subreddits_list {
+                info!("Fetching r/{} ({}, limit {})", sub, sort, limit);
+                let mut sub_listing =
+                    user.subreddit_listing(sub, &sort, period.as_ref(), limit).await?;
+                all_listings.append(&mut sub_listing);
+            }
+            // subreddits filter not needed — we already fetched per-subreddit
+            (all_listings, None)
+        }
+        _ => {
+            let listing_type = if effective_mode == "upvoted" {
+                ListingType::Upvoted
+            } else {
+                ListingType::Saved
+            };
+            let listing = user.listing(&listing_type, effective_limit).await?;
+            (listing, subreddits)
+        }
+    };
+
     debug!("Posts: {:#?}", listing);
 
     let downloader = Downloader::new(
         &listing,
         &data_directory,
-        &subreddits,
+        &downloader_subreddits,
         should_download,
         ffmpeg_available,
         ytdlp_available,

@@ -30,6 +30,50 @@ impl Display for ListingType {
     }
 }
 
+/// Sort order for subreddit feed listings.
+#[derive(Debug)]
+pub enum SubredditSort {
+    Hot,
+    Top,
+    New,
+    Controversial,
+}
+
+impl Display for SubredditSort {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match *self {
+            SubredditSort::Hot => write!(f, "hot"),
+            SubredditSort::Top => write!(f, "top"),
+            SubredditSort::New => write!(f, "new"),
+            SubredditSort::Controversial => write!(f, "controversial"),
+        }
+    }
+}
+
+/// Time period filter for top/controversial subreddit listings.
+#[derive(Debug)]
+pub enum TimePeriod {
+    Hour,
+    Day,
+    Week,
+    Month,
+    Year,
+    All,
+}
+
+impl Display for TimePeriod {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match *self {
+            TimePeriod::Hour => write!(f, "hour"),
+            TimePeriod::Day => write!(f, "day"),
+            TimePeriod::Week => write!(f, "week"),
+            TimePeriod::Month => write!(f, "month"),
+            TimePeriod::Year => write!(f, "year"),
+            TimePeriod::All => write!(f, "all"),
+        }
+    }
+}
+
 impl<'a> User<'a> {
     pub fn new(auth: &'a Auth, name: &'a str) -> Self {
         User { auth, name }
@@ -55,14 +99,19 @@ impl<'a> User<'a> {
         Ok(response)
     }
 
+    /// Fetch saved or upvoted posts for the authenticated user.
+    ///
+    /// `limit` caps the total number of posts returned. Pass `None` to fetch all
+    /// available posts (the original behaviour).
     pub async fn listing(
         &self,
         listing_type: &ListingType,
+        limit: Option<usize>,
     ) -> Result<Vec<Listing>, ReddSaverError> {
         let client = reqwest::Client::new();
 
         let mut complete = false;
-        let mut processed = 0;
+        let mut processed: usize = 0;
         let mut after: Option<String> = None;
         let mut listing: Vec<Listing> = Vec::new();
         while !complete {
@@ -80,7 +129,7 @@ impl<'a> User<'a> {
                 )
             };
 
-            let response = client
+            let mut response = client
                 .get(&url)
                 .bearer_auth(&self.auth.access_token)
                 .header(USER_AGENT, get_user_agent_string(None, None))
@@ -91,15 +140,100 @@ impl<'a> User<'a> {
                 .json::<Listing>()
                 .await?;
 
-            // total number of items processed by the method
-            // note that not all of these items are media, so the downloaded media will be
-            // lesser than or equal to the number of items present
-            processed += response.data.dist;
+            let page_count = response.data.dist as usize;
+
+            // if a limit is set and this page would exceed it, trim the children
+            if let Some(cap) = limit {
+                let remaining = cap.saturating_sub(processed);
+                if page_count > remaining {
+                    response.data.children.truncate(remaining);
+                    response.data.dist = remaining as i32;
+                }
+            }
+
+            processed += response.data.dist as usize;
             info!("Number of items processed : {}", processed);
 
+            let hit_limit = limit.map(|cap| processed >= cap).unwrap_or(false);
+
             // if there is a response, continue collecting them into a vector
-            if response.data.after.as_ref().is_none() {
+            if response.data.after.as_ref().is_none() || hit_limit {
                 info!("Data gathering complete. Yay.");
+                listing.push(response);
+                complete = true;
+            } else {
+                debug!("Processing till: {}", response.data.after.as_ref().unwrap());
+                after = response.data.after.clone();
+                listing.push(response);
+            }
+        }
+
+        Ok(listing)
+    }
+
+    /// Fetch posts from a subreddit's feed.
+    ///
+    /// `sort` selects the listing type (hot, top, new, controversial).
+    /// `period` applies a time filter for `top` and `controversial` sorts.
+    /// `limit` caps the total number of posts returned (per subreddit).
+    pub async fn subreddit_listing(
+        &self,
+        subreddit: &str,
+        sort: &SubredditSort,
+        period: Option<&TimePeriod>,
+        limit: usize,
+    ) -> Result<Vec<Listing>, ReddSaverError> {
+        let client = reqwest::Client::new();
+
+        let mut complete = false;
+        let mut processed: usize = 0;
+        let mut after: Option<String> = None;
+        let mut listing: Vec<Listing> = Vec::new();
+
+        while !complete {
+            let base_url = if processed == 0 {
+                format!("https://oauth.reddit.com/r/{}/{}", subreddit, sort)
+            } else {
+                format!(
+                    "https://oauth.reddit.com/r/{}/{}?after={}",
+                    subreddit,
+                    sort,
+                    after.as_ref().unwrap()
+                )
+            };
+
+            let mut request = client
+                .get(&base_url)
+                .bearer_auth(&self.auth.access_token)
+                .header(USER_AGENT, get_user_agent_string(None, None))
+                .query(&[("limit", "100")]);
+
+            // top and controversial support an optional time period filter
+            if let Some(p) = period {
+                match sort {
+                    SubredditSort::Top | SubredditSort::Controversial => {
+                        request = request.query(&[("t", p.to_string())]);
+                    }
+                    _ => {}
+                }
+            }
+
+            let mut response = request.send().await?.json::<Listing>().await?;
+
+            let page_count = response.data.dist as usize;
+            let remaining = limit.saturating_sub(processed);
+            if page_count > remaining {
+                response.data.children.truncate(remaining);
+                response.data.dist = remaining as i32;
+            }
+
+            processed += response.data.dist as usize;
+            info!("Number of items processed from r/{}: {}", subreddit, processed);
+
+            let hit_limit = processed >= limit;
+
+            if response.data.after.as_ref().is_none() || hit_limit {
+                info!("Data gathering complete for r/{}.", subreddit);
                 listing.push(response);
                 complete = true;
             } else {
