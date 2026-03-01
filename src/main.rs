@@ -10,7 +10,7 @@ use auth::Client;
 
 use crate::download::Downloader;
 use crate::errors::ReddSaverError;
-use crate::user::{ListingType, SubredditSort, TimePeriod, User};
+use crate::user::{ListingType, Mode, SubredditSort, TimePeriod, User};
 use crate::utils::*;
 
 mod auth;
@@ -95,7 +95,7 @@ fn cli() -> Command {
                 .short('m')
                 .long("mode")
                 .value_name("MODE")
-                .value_parser(["saved", "upvoted", "feed"])
+                .value_parser(clap::value_parser!(Mode))
                 .default_value("saved")
                 .help("Operation mode"),
         )
@@ -142,7 +142,7 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
     let subreddits: Option<Vec<&str>> =
         matches.get_many::<String>("subreddits").map(|vals| vals.map(|s| s.as_str()).collect());
 
-    let effective_mode = matches.get_one::<String>("mode").map(|s| s.as_str()).unwrap_or("saved");
+    let mode = matches.get_one::<Mode>("mode").cloned().unwrap_or(Mode::Saved);
 
     // Parse listing-type and time-filter (only meaningful in feed mode)
     let listing_type = matches.get_one::<SubredditSort>("listing_type").cloned().unwrap_or(SubredditSort::Hot);
@@ -150,7 +150,7 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
 
     // Validate that listing-type / time-filter are not used outside feed mode.
     // We detect "explicit" use by checking whether the value differs from the default.
-    if effective_mode != "feed" {
+    if mode != Mode::Feed {
         let listing_type_explicit = listing_type != SubredditSort::Hot
             && matches.value_source("listing_type") == Some(clap::parser::ValueSource::CommandLine);
         let time_filter_explicit = time_filter != TimePeriod::All
@@ -169,7 +169,7 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
     }
 
     // In feed mode, --subreddits is required
-    if effective_mode == "feed" && subreddits.is_none() {
+    if mode == Mode::Feed && subreddits.is_none() {
         return Err(ReddSaverError::InvalidArgument(
             "--mode feed requires at least one subreddit via --subreddits".to_string(),
         ));
@@ -177,8 +177,8 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
 
     // Determine effective limit
     let explicit_limit: Option<usize> = matches.get_one::<usize>("limit").copied();
-    let effective_limit: Option<usize> = match effective_mode {
-        "feed" => Some(explicit_limit.unwrap_or(1000)),
+    let effective_limit: Option<usize> = match mode {
+        Mode::Feed => Some(explicit_limit.unwrap_or(1000)),
         _ => explicit_limit, // None means unlimited for saved/upvoted
     };
 
@@ -207,7 +207,7 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
         info!("REDDSAVER_PASSWORD = {}", mask_sensitive(&password));
         info!("USER_AGENT = {}", &user_agent);
         info!("SUBREDDITS = {}", print_subreddits(&subreddits));
-        info!("MODE = {}", effective_mode);
+        info!("MODE = {}", mode);
         info!("LISTING_TYPE = {}", listing_type);
         info!("TIME_FILTER = {}", time_filter);
         info!(
@@ -253,10 +253,10 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
 
     info!("Starting data gathering from Reddit. This might take some time. Hold on....");
 
-    let (listing, downloader_subreddits) = match effective_mode {
-        "feed" => {
+    let (listing, downloader_subreddits) = match mode {
+        Mode::Feed => {
             let subreddits_list = subreddits.as_ref().unwrap();
-            let limit = effective_limit.unwrap(); // always Some in subreddit mode
+            let limit = effective_limit.unwrap(); // always Some in feed mode
             let mut all_listings = Vec::new();
             for sub in subreddits_list {
                 info!("Fetching r/{} ({}, limit {})", sub, listing_type, limit);
@@ -267,13 +267,12 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
             // subreddits filter not needed — we already fetched per-subreddit
             (all_listings, None)
         }
-        _ => {
-            let listing_type = if effective_mode == "upvoted" {
-                ListingType::Upvoted
-            } else {
-                ListingType::Saved
-            };
-            let listing = user.listing(&listing_type, effective_limit).await?;
+        Mode::Saved => {
+            let listing = user.listing(&ListingType::Saved, effective_limit).await?;
+            (listing, subreddits)
+        }
+        Mode::Upvoted => {
+            let listing = user.listing(&ListingType::Upvoted, effective_limit).await?;
             (listing, subreddits)
         }
     };

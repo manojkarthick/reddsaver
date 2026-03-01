@@ -30,6 +30,24 @@ impl Display for ListingType {
     }
 }
 
+/// Top-level operation mode selected via --mode.
+#[derive(Clone, Debug, PartialEq, clap::ValueEnum)]
+pub enum Mode {
+    Saved,
+    Upvoted,
+    Feed,
+}
+
+impl Display for Mode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Mode::Saved => write!(f, "saved"),
+            Mode::Upvoted => write!(f, "upvoted"),
+            Mode::Feed => write!(f, "feed"),
+        }
+    }
+}
+
 /// Sort order for subreddit feed listings.
 #[derive(Clone, Debug, PartialEq, clap::ValueEnum)]
 pub enum SubredditSort {
