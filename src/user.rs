@@ -52,6 +52,8 @@ impl Display for Mode {
 #[derive(Clone, Debug, PartialEq, clap::ValueEnum)]
 pub enum SubredditSort {
     Hot,
+    Best,
+    Rising,
     Top,
     New,
     Controversial,
@@ -61,6 +63,8 @@ impl Display for SubredditSort {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match *self {
             SubredditSort::Hot => write!(f, "hot"),
+            SubredditSort::Best => write!(f, "best"),
+            SubredditSort::Rising => write!(f, "rising"),
             SubredditSort::Top => write!(f, "top"),
             SubredditSort::New => write!(f, "new"),
             SubredditSort::Controversial => write!(f, "controversial"),
@@ -191,7 +195,7 @@ impl<'a> User<'a> {
 
     /// Fetch posts from a subreddit's feed.
     ///
-    /// `sort` selects the listing type (hot, top, new, controversial).
+    /// `sort` selects the listing type (hot, best, rising, top, new, controversial).
     /// `period` applies a time filter for `top` and `controversial` sorts.
     /// `limit` caps the total number of posts returned (per subreddit).
     pub async fn subreddit_listing(

@@ -124,7 +124,7 @@ reddsaver -e reddsaver.env -d data
 # Download upvoted media instead
 reddsaver -e reddsaver.env -d data --mode upvoted
 
-# Download from a subreddit's hot feed (default listing type, limit 1000)
+# Download from a subreddit's hot feed (default listing type, limit 500)
 reddsaver -e reddsaver.env -d data --mode feed --subreddits pics
 
 # Download top posts of the week from multiple subreddits (500 per subreddit)
@@ -132,6 +132,12 @@ reddsaver -e reddsaver.env -d data --mode feed --subreddits pics,aww --listing-t
 
 # Download new posts from a subreddit
 reddsaver -e reddsaver.env -d data --mode feed --subreddits earthporn --listing-type new
+
+# Download a subreddit's best feed
+reddsaver -e reddsaver.env -d data --mode feed --subreddits pics --listing-type best
+
+# Download rising posts from a subreddit
+reddsaver -e reddsaver.env -d data --mode feed --subreddits pics --listing-type rising
 
 # Limit saved/upvoted downloads
 reddsaver -e reddsaver.env -d data --limit 200
@@ -159,9 +165,9 @@ Options:
   -r, --dry-run                  Dry run and print the URLs of saved media to download
   -S, --subreddits <SUBREDDITS>  Subreddits to filter (saved/upvoted) or fetch from (feed mode)
   -m, --mode <MODE>              Operation mode [default: saved] [possible values: saved, upvoted, feed]
-  -t, --listing-type <TYPE>      Subreddit listing sort [default: hot] [possible values: hot, top, new, controversial]
+  -t, --listing-type <TYPE>      Subreddit listing sort [default: hot] [possible values: hot, best, rising, top, new, controversial]
   -T, --time-filter <PERIOD>     Time period for top/controversial listings [default: all] [possible values: hour, day, week, month, year, all]
-  -l, --limit <LIMIT>            Max posts to process per source (default: unlimited for saved/upvoted, 1000 for feed)
+  -l, --limit <LIMIT>            Max posts to process per source (default: unlimited for saved/upvoted, 500 for feed)
   -h, --help                     Print help
   -V, --version                  Print version
 ```
@@ -176,16 +182,18 @@ Options:
 
 ### Feed mode options
 
-`--listing-type` and `--time-filter` are only valid with `--mode feed`. `--subreddits` is required in feed mode and specifies which subreddit(s) to fetch from. The `--limit` defaults to **1000 per subreddit**.
+`--listing-type` and `--time-filter` are only valid with `--mode feed`. `--subreddits` is required in feed mode and specifies which subreddit(s) to fetch from. The `--limit` defaults to **500 per subreddit**.
 
 | Listing type | Time filter applies? | Description |
 |---|---|---|
 | `hot` (default) | No | Currently trending posts |
+| `best` | No | Reddit's best-ranked posts for the subreddit |
+| `rising` | No | Posts currently gaining traction in the subreddit |
 | `top` | Yes | Highest-scoring posts in the given time period |
 | `new` | No | Most recently submitted posts |
 | `controversial` | Yes | Most controversial posts in the given time period |
 
-Time filter values for `top` and `controversial`: `hour`, `day`, `week`, `month`, `year`, `all` (default `all`).
+Time filter values for `top` and `controversial`: `hour`, `day`, `week`, `month`, `year`, `all` (default `all`). If `--time-filter` is passed with `hot`, `best`, `rising`, or `new`, the value is ignored.
 
 ## File naming
 
@@ -213,6 +221,18 @@ Given any file downloaded by reddsaver, prints the subreddit, username, and a di
 # Subreddit: aww
 # Username:  thunderbird42
 # Post link: https://www.reddit.com/r/aww/comments/abc123/
+```
+
+### download_top_presets.sh
+
+Runs a common set of `top` downloads for a single subreddit:
+- `all` with limit `1000`
+- `year` with limit `500`
+- `month` with limit `250`
+- `day` with limit `25`
+
+```shell
+./scripts/download_top_presets.sh --env-file zzxx.env --subreddit SkinnyWithAbs --data-dir ~/Downloads/Reddit
 ```
 
 ## Download summary

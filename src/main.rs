@@ -123,7 +123,7 @@ fn cli() -> Command {
                 .long("limit")
                 .value_name("LIMIT")
                 .value_parser(clap::value_parser!(usize))
-                .help("Max posts to process per source (default: unlimited for saved/upvoted, 1000 for feed)"),
+                .help("Max posts to process per source (default: unlimited for saved/upvoted, 500 for feed)"),
         )
 }
 
@@ -149,12 +149,12 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
     let time_filter = matches.get_one::<TimePeriod>("time_filter").cloned().unwrap_or(TimePeriod::All);
 
     // Validate that listing-type / time-filter are not used outside feed mode.
-    // We detect "explicit" use by checking whether the value differs from the default.
+    // For time-filter, we only care whether the user passed the flag explicitly.
     if mode != Mode::Feed {
         let listing_type_explicit = listing_type != SubredditSort::Hot
             && matches.value_source("listing_type") == Some(clap::parser::ValueSource::CommandLine);
-        let time_filter_explicit = time_filter != TimePeriod::All
-            && matches.value_source("time_filter") == Some(clap::parser::ValueSource::CommandLine);
+        let time_filter_explicit =
+            matches.value_source("time_filter") == Some(clap::parser::ValueSource::CommandLine);
 
         if listing_type_explicit {
             return Err(ReddSaverError::InvalidArgument(
@@ -175,10 +175,19 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
         ));
     }
 
+    let time_filter_explicit =
+        matches.value_source("time_filter") == Some(clap::parser::ValueSource::CommandLine);
+    if mode == Mode::Feed
+        && time_filter_explicit
+        && !matches!(listing_type, SubredditSort::Top | SubredditSort::Controversial)
+    {
+        warn!("--time-filter is only supported for top and controversial listing types, ignoring.");
+    }
+
     // Determine effective limit
     let explicit_limit: Option<usize> = matches.get_one::<usize>("limit").copied();
     let effective_limit: Option<usize> = match mode {
-        Mode::Feed => Some(explicit_limit.unwrap_or(1000)),
+        Mode::Feed => Some(explicit_limit.unwrap_or(500)),
         _ => explicit_limit, // None means unlimited for saved/upvoted
     };
 
