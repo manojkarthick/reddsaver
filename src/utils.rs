@@ -15,7 +15,7 @@ lazy_static! {
     static ref RG_RE_OLD: Regex =
         Regex::new(r"/([A-Za-z]+)-mobile\.mp4").expect("valid regex");
     static ref RG_RE_NEW: Regex =
-        Regex::new(r"/(?:watch/)?([A-Za-z]+)(?:[^/]*)$").expect("valid regex");
+        Regex::new(r"/(?:watch/)?([A-Za-z0-9]+)(?:[^/]*)$").expect("valid regex");
 }
 
 // RedGifs requires the same User-Agent for both token fetch and media fetch calls
