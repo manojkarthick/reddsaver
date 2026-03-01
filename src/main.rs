@@ -153,14 +153,10 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
     // Validate that listing-type / time-filter are not used outside feed mode.
     // We detect "explicit" use by checking whether the value differs from the default.
     if effective_mode != "feed" {
-        let listing_type_explicit =
-            matches.get_one::<String>("listing_type").map(|s| s.as_str()) != Some("hot")
-                && matches.value_source("listing_type")
-                    == Some(clap::parser::ValueSource::CommandLine);
-        let time_filter_explicit =
-            matches.get_one::<String>("time_filter").map(|s| s.as_str()) != Some("all")
-                && matches.value_source("time_filter")
-                    == Some(clap::parser::ValueSource::CommandLine);
+        let listing_type_explicit = listing_type_str != "hot"
+            && matches.value_source("listing_type") == Some(clap::parser::ValueSource::CommandLine);
+        let time_filter_explicit = time_filter_str != "all"
+            && matches.value_source("time_filter") == Some(clap::parser::ValueSource::CommandLine);
 
         if listing_type_explicit {
             return Err(ReddSaverError::InvalidArgument(
