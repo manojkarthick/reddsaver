@@ -141,6 +141,25 @@ pub async fn fetch_redgif_url(
     Ok(Some(response))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn check_path_present_returns_true_for_existing_directory() {
+        let dir = tempdir().unwrap();
+        assert!(check_path_present(dir.path().to_str().unwrap()));
+    }
+
+    #[test]
+    fn check_path_present_returns_false_for_nonexistent_path() {
+        let dir = tempdir().unwrap();
+        let nonexistent = dir.path().join("does-not-exist");
+        assert!(!check_path_present(nonexistent.to_str().unwrap()));
+    }
+}
+
 /// Check if the given URL contains an MP4 track using the content type
 pub async fn check_url_is_mp4(url: &str) -> Result<Option<bool>, ReddSaverError> {
     let response = reqwest::get(url).await?;
