@@ -5,8 +5,16 @@ use thiserror::Error;
 #[allow(dead_code)]
 #[derive(Error, Debug)]
 pub enum ReddSaverError {
-    #[error("Missing environment variable")]
-    EnvVarNotPresent(#[from] std::env::VarError),
+    #[error("Missing required environment variables: {}", .0.join(", "))]
+    MissingEnvironmentVariables(Vec<String>),
+    #[error("Environment variable {0} contains invalid Unicode data")]
+    InvalidEnvironmentVariableEncoding(String),
+    #[error("Could not load environment file `{path}`: {source}")]
+    EnvironmentFileLoadError {
+        path: String,
+        #[source]
+        source: dotenvy::Error,
+    },
     #[error("Unable to process request")]
     ReqwestError(#[from] reqwest::Error),
     #[error("Could not create directory")]

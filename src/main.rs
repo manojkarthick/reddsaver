@@ -1,8 +1,9 @@
 use std::env;
+use std::process::ExitCode;
 
-use clap::{crate_version, Arg, ArgAction, Command};
+use clap::{crate_version, Arg, ArgAction, ArgMatches, Command};
 use env_logger::Env;
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 
 use auth::Client;
 
@@ -20,8 +21,33 @@ mod user;
 mod utils;
 
 #[tokio::main]
-async fn main() -> Result<(), ReddSaverError> {
-    let matches = Command::new("ReddSaver")
+async fn main() -> ExitCode {
+    let matches = cli().get_matches();
+    let env_file =
+        String::from(matches.get_one::<String>("environment").map(|s| s.as_str()).unwrap());
+
+    let env_file_result = load_env_file(&env_file);
+
+    // initialize logger for the app and set logging level to info if no environment variable present
+    let env = Env::default().filter("RS_LOG").default_filter_or("info");
+    env_logger::Builder::from_env(env).init();
+
+    if let Err(err) = env_file_result {
+        error!("{err}");
+        return ExitCode::FAILURE;
+    }
+
+    match run(matches).await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            error!("{err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn cli() -> Command {
+    Command::new("ReddSaver")
         .version(crate_version!())
         .author("Manoj Karthick Selva Kumar")
         .about("Simple CLI tool to download saved media from Reddit")
@@ -71,9 +97,11 @@ async fn main() -> Result<(), ReddSaverError> {
                 .action(ArgAction::SetTrue)
                 .help("Download media from upvoted posts"),
         )
-        .get_matches();
+}
 
+async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
     let env_file = matches.get_one::<String>("environment").map(|s| s.as_str()).unwrap();
+
     let data_directory =
         String::from(matches.get_one::<String>("data_directory").map(|s| s.as_str()).unwrap());
     // generate the URLs to download from without actually downloading the media
@@ -88,17 +116,11 @@ async fn main() -> Result<(), ReddSaverError> {
     let upvoted = matches.get_flag("upvoted");
     let listing_type = if upvoted { &ListingType::Upvoted } else { &ListingType::Saved };
 
-    // initialize environment from the .env file
-    dotenvy::from_filename(env_file).ok();
-
-    // initialize logger for the app and set logging level to info if no environment variable present
-    let env = Env::default().filter("RS_LOG").default_filter_or("info");
-    env_logger::Builder::from_env(env).init();
-
-    let client_id = env::var("REDDSAVER_CLIENT_ID")?;
-    let client_secret = env::var("REDDSAVER_CLIENT_SECRET")?;
-    let username = env::var("REDDSAVER_USERNAME")?;
-    let password = env::var("REDDSAVER_PASSWORD")?;
+    let required_env = load_required_env()?;
+    let client_id = required_env.client_id;
+    let client_secret = required_env.client_secret;
+    let username = required_env.username;
+    let password = required_env.password;
     let user_agent = get_user_agent_string(None, None);
 
     if !check_path_present(&data_directory) {
@@ -171,4 +193,183 @@ async fn main() -> Result<(), ReddSaverError> {
     downloader.run().await?;
 
     Ok(())
+}
+
+fn load_env_file(env_file: &str) -> Result<(), ReddSaverError> {
+    match dotenvy::from_filename(env_file) {
+        Ok(_) => Ok(()),
+        Err(err) if err.not_found() => Ok(()),
+        Err(err) => Err(ReddSaverError::EnvironmentFileLoadError {
+            path: String::from(env_file),
+            source: err,
+        }),
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct RequiredEnvConfig {
+    client_id: String,
+    client_secret: String,
+    username: String,
+    password: String,
+}
+
+fn load_required_env() -> Result<RequiredEnvConfig, ReddSaverError> {
+    load_required_env_with(|name| env::var(name))
+}
+
+fn load_required_env_with<F>(mut read_var: F) -> Result<RequiredEnvConfig, ReddSaverError>
+where
+    F: FnMut(&str) -> Result<String, env::VarError>,
+{
+    let mut missing = Vec::new();
+    let client_id = read_required_env(&mut read_var, &mut missing, "REDDSAVER_CLIENT_ID")?;
+    let client_secret = read_required_env(&mut read_var, &mut missing, "REDDSAVER_CLIENT_SECRET")?;
+    let username = read_required_env(&mut read_var, &mut missing, "REDDSAVER_USERNAME")?;
+    let password = read_required_env(&mut read_var, &mut missing, "REDDSAVER_PASSWORD")?;
+
+    if !missing.is_empty() {
+        return Err(ReddSaverError::MissingEnvironmentVariables(missing));
+    }
+
+    Ok(RequiredEnvConfig {
+        client_id: client_id.unwrap(),
+        client_secret: client_secret.unwrap(),
+        username: username.unwrap(),
+        password: password.unwrap(),
+    })
+}
+
+fn read_required_env<F>(
+    read_var: &mut F,
+    missing: &mut Vec<String>,
+    name: &str,
+) -> Result<Option<String>, ReddSaverError>
+where
+    F: FnMut(&str) -> Result<String, env::VarError>,
+{
+    match read_var(name) {
+        Ok(value) => Ok(Some(value)),
+        Err(env::VarError::NotPresent) => {
+            missing.push(String::from(name));
+            Ok(None)
+        }
+        Err(env::VarError::NotUnicode(_)) => {
+            Err(ReddSaverError::InvalidEnvironmentVariableEncoding(String::from(name)))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::ffi::OsString;
+    use std::io::Write;
+
+    use super::*;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn loads_required_env_when_all_values_are_present() {
+        let values = HashMap::from([
+            ("REDDSAVER_CLIENT_ID", Ok(String::from("client-id"))),
+            ("REDDSAVER_CLIENT_SECRET", Ok(String::from("client-secret"))),
+            ("REDDSAVER_USERNAME", Ok(String::from("username"))),
+            ("REDDSAVER_PASSWORD", Ok(String::from("password"))),
+        ]);
+
+        let config = load_required_env_with(|name| values.get(name).cloned().unwrap()).unwrap();
+
+        assert_eq!(
+            config,
+            RequiredEnvConfig {
+                client_id: String::from("client-id"),
+                client_secret: String::from("client-secret"),
+                username: String::from("username"),
+                password: String::from("password"),
+            }
+        );
+    }
+
+    #[test]
+    fn reports_a_single_missing_env_var_by_name() {
+        let values = HashMap::from([
+            ("REDDSAVER_CLIENT_ID", Ok(String::from("client-id"))),
+            ("REDDSAVER_CLIENT_SECRET", Ok(String::from("client-secret"))),
+            ("REDDSAVER_USERNAME", Err(env::VarError::NotPresent)),
+            ("REDDSAVER_PASSWORD", Ok(String::from("password"))),
+        ]);
+
+        let err = load_required_env_with(|name| values.get(name).cloned().unwrap()).unwrap_err();
+
+        assert!(matches!(
+            err,
+            ReddSaverError::MissingEnvironmentVariables(names)
+                if names == vec![String::from("REDDSAVER_USERNAME")]
+        ));
+    }
+
+    #[test]
+    fn reports_all_missing_env_vars_in_a_stable_order() {
+        let values = HashMap::from([
+            ("REDDSAVER_CLIENT_ID", Err(env::VarError::NotPresent)),
+            ("REDDSAVER_CLIENT_SECRET", Ok(String::from("client-secret"))),
+            ("REDDSAVER_USERNAME", Err(env::VarError::NotPresent)),
+            ("REDDSAVER_PASSWORD", Err(env::VarError::NotPresent)),
+        ]);
+
+        let err = load_required_env_with(|name| values.get(name).cloned().unwrap()).unwrap_err();
+
+        assert!(matches!(
+            err,
+            ReddSaverError::MissingEnvironmentVariables(names)
+                if names
+                    == vec![
+                        String::from("REDDSAVER_CLIENT_ID"),
+                        String::from("REDDSAVER_USERNAME"),
+                        String::from("REDDSAVER_PASSWORD"),
+                    ]
+        ));
+    }
+
+    #[test]
+    fn reports_invalid_unicode_with_the_env_var_name() {
+        let values = HashMap::from([
+            ("REDDSAVER_CLIENT_ID", Ok(String::from("client-id"))),
+            ("REDDSAVER_CLIENT_SECRET", Err(env::VarError::NotUnicode(OsString::from("bad")))),
+            ("REDDSAVER_USERNAME", Ok(String::from("username"))),
+            ("REDDSAVER_PASSWORD", Ok(String::from("password"))),
+        ]);
+
+        let err = load_required_env_with(|name| values.get(name).cloned().unwrap()).unwrap_err();
+
+        assert!(matches!(
+            err,
+            ReddSaverError::InvalidEnvironmentVariableEncoding(name)
+                if name == "REDDSAVER_CLIENT_SECRET"
+        ));
+    }
+
+    #[test]
+    fn ignores_missing_env_files() {
+        let result = load_env_file("/path/that/does/not/exist/reddsaver.env");
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn reports_invalid_env_file_syntax() {
+        let mut file = NamedTempFile::new().unwrap();
+        writeln!(file, "REDDSAVER_CLIENT_ID=\"abc$def\nREDDSAVER_CLIENT_SECRET=\"secret\"")
+            .unwrap();
+
+        let err = load_env_file(file.path().to_str().unwrap()).unwrap_err();
+
+        assert!(matches!(
+            err,
+            ReddSaverError::EnvironmentFileLoadError { ref path, .. }
+                if path == file.path().to_str().unwrap()
+        ));
+        assert!(err.to_string().contains("Could not load environment file"));
+    }
 }

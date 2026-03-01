@@ -98,13 +98,16 @@ docker run --rm \
 2. Create a `.env` file (e.g. `reddsaver.env`) with your credentials:
 
 ```shell
-REDDSAVER_CLIENT_ID="<client_id>"
-REDDSAVER_CLIENT_SECRET="<client_secret>"
-REDDSAVER_USERNAME="<username>"
-REDDSAVER_PASSWORD="<password>"
+REDDSAVER_CLIENT_ID='<client_id>'
+REDDSAVER_CLIENT_SECRET='<client_secret>'
+REDDSAVER_USERNAME='<username>'
+REDDSAVER_PASSWORD='<password>'
 ```
 
-> If you have 2FA enabled: `REDDSAVER_PASSWORD=<password>:<2FA_TOTP_token>`
+> [!IMPORTANT]
+> Use single quotes for values in the env file, especially if a value contains `$`. Unquoted `$` triggers variable substitution, and double-quoted values containing special characters can be parsed unexpectedly.
+>
+> If you have 2FA enabled: `REDDSAVER_PASSWORD='<password>:<2FA_TOTP_token>'`
 
 ## Usage
 
