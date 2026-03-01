@@ -61,9 +61,8 @@ lazy_static! {
 }
 
 lazy_static! {
-    static ref RG_TOKEN: AsyncOnce<String> = AsyncOnce::new(async {
-        fetch_redgif_token().await.unwrap()
-    });
+    static ref RG_TOKEN: AsyncOnce<String> =
+        AsyncOnce::new(async { fetch_redgif_token().await.unwrap() });
 }
 
 /// Status of media processing
@@ -160,10 +159,7 @@ impl<'a> Downloader<'a> {
         info!("  Total downloaded: {}", full_summary.media_downloaded);
         info!("  Total skipped:    {}", full_summary.media_skipped);
         info!("");
-        info!(
-            "  {:<24} | {:>9} | {:>10} | {:>7}",
-            "Source", "Supported", "Downloaded", "Skipped"
-        );
+        info!("  {:<24} | {:>9} | {:>10} | {:>7}", "Source", "Supported", "Downloaded", "Skipped");
         info!("  {}", "-".repeat(59));
         let mut sources: Vec<(&String, &SourceStats)> = full_summary.by_source.iter().collect();
         sources.sort_by_key(|(k, _)| k.as_str());
@@ -205,11 +201,8 @@ impl<'a> Downloader<'a> {
                     let post_id = item.data.id.borrow();
                     let post_name = item.data.name.borrow();
 
-                    let post_metadata = PostMetadata {
-                        subreddit,
-                        author: post_author,
-                        id: post_id,
-                    };
+                    let post_metadata =
+                        PostMetadata { subreddit, author: post_author, id: post_id };
 
                     let is_valid = if let Some(s) = self.subreddits.as_ref() {
                         if s.contains(&subreddit) {
@@ -379,12 +372,7 @@ impl<'a> Downloader<'a> {
             {
                 extension = format!("{}.{}", extension, ".mp4");
             }
-            let file_name = self.generate_file_name(
-                &url,
-                &extension,
-                &item_index,
-                post_metadata,
-            );
+            let file_name = self.generate_file_name(&url, &extension, &item_index, post_metadata);
 
             if self.should_download {
                 let status = save_or_skip(url, &file_name);
@@ -422,12 +410,8 @@ impl<'a> Downloader<'a> {
                 let extension = String::from(first_url.split('.').last().unwrap_or("unknown"));
                 // this generates the name of the media without the component indices
                 // this file name is used for saving the ffmpeg combined file
-                let combined_file_name = self.generate_file_name(
-                    first_url,
-                    &extension,
-                    "0",
-                    post_metadata,
-                );
+                let combined_file_name =
+                    self.generate_file_name(first_url, &extension, "0", post_metadata);
 
                 let temporary_dir = tempdir()?;
                 let temporary_file_name = temporary_dir.path().join("combined.mp4");
@@ -466,12 +450,8 @@ impl<'a> Downloader<'a> {
                         fs::rename(&temporary_file_name, &combined_file_name)?;
                     } else {
                         // if we encountered an error, we will write logs from ffmpeg into a new log file
-                        let log_file_name = self.generate_file_name(
-                            first_url,
-                            "log",
-                            "0",
-                            post_metadata,
-                        );
+                        let log_file_name =
+                            self.generate_file_name(first_url, "log", "0", post_metadata);
                         let err = String::from_utf8(output.stderr).unwrap();
                         warn!(
                             "Could not combine video {} and audio {}. Saving log to: {}",
@@ -503,12 +483,13 @@ impl<'a> Downloader<'a> {
 
         if self.should_download {
             if self.ytdlp_available {
-                let file_name = self.generate_file_name(
-                    &media_url,
-                    "mp4",
-                    "0",
-                    post_metadata,
-                );
+                let file_name = self.generate_file_name(&media_url, "mp4", "0", post_metadata);
+
+                if check_path_present(&file_name) {
+                    debug!("Youtube video from url {} already downloaded. Skipping...", media_url);
+                    media_skipped += 1;
+                    return Ok((media_downloaded, media_skipped));
+                }
 
                 let mut command = Command::new("yt-dlp");
                 command
@@ -522,15 +503,22 @@ impl<'a> Downloader<'a> {
                 debug!("Executing command: {:#?}", command);
                 let output = command.output()?;
 
-                if output.status.success() {
+                if output.status.success() && check_path_present(&file_name) {
                     info!("Successfully downloaded youtube video: {} to {}", media_url, &file_name);
                     media_downloaded += 1;
+                } else if output.status.success() {
+                    warn!(
+                        "yt-dlp reported success for {} but no file was created at {}",
+                        media_url, file_name
+                    );
+                    media_skipped += 1;
                 } else {
                     warn!("Unable to download youtube video: {}", media_url);
                     media_skipped += 1;
                 }
             } else {
                 warn!("yt-dlp is not installed, skipping youtube video download: {}", media_url);
+                media_skipped += 1;
             }
         } else {
             info!("Media available at URL: {}", &media_url);
@@ -557,12 +545,7 @@ impl<'a> Downloader<'a> {
             String::from(media_url.split('.').last().unwrap_or("unknown")).replace("/", "_")
         };
 
-        let file_name = self.generate_file_name(
-            &media_url,
-            &extension,
-            &index,
-            post_metadata,
-        );
+        let file_name = self.generate_file_name(&media_url, &extension, &index, post_metadata);
 
         if self.should_download {
             let status = save_or_skip(&*media_url, &file_name);

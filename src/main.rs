@@ -81,7 +81,8 @@ async fn main() -> Result<(), ReddSaverError> {
         .get_matches();
 
     let env_file = matches.get_one::<String>("environment").map(|s| s.as_str()).unwrap();
-    let data_directory = String::from(matches.get_one::<String>("data_directory").map(|s| s.as_str()).unwrap());
+    let data_directory =
+        String::from(matches.get_one::<String>("data_directory").map(|s| s.as_str()).unwrap());
     // generate the URLs to download from without actually downloading the media
     let should_download = !matches.get_flag("dry_run");
     // check if ffmpeg is present for combining video streams
@@ -89,9 +90,8 @@ async fn main() -> Result<(), ReddSaverError> {
     // check if yt-dlp is present on the system
     let ytdlp_available = application_present(String::from("yt-dlp"));
     // restrict downloads to these subreddits
-    let subreddits: Option<Vec<&str>> = matches
-        .get_many::<String>("subreddits")
-        .map(|vals| vals.map(|s| s.as_str()).collect());
+    let subreddits: Option<Vec<&str>> =
+        matches.get_many::<String>("subreddits").map(|vals| vals.map(|s| s.as_str()).collect());
     let upvoted = matches.get_flag("upvoted");
     let listing_type = if upvoted { &ListingType::Upvoted } else { &ListingType::Saved };
 

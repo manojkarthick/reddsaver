@@ -89,7 +89,10 @@ pub async fn fetch_redgif_token() -> Result<String, ReddSaverError> {
 /// Resolve a RedGifs URL to the actual HD mp4 response using the v2 API.
 /// Returns Ok(None) if the gif is unavailable (deleted or private), with a
 /// warning already emitted — the caller should skip without further logging.
-pub async fn fetch_redgif_url(rg_token: &str, orig_url: &str) -> Result<Option<reqwest::Response>, ReddSaverError> {
+pub async fn fetch_redgif_url(
+    rg_token: &str,
+    orig_url: &str,
+) -> Result<Option<reqwest::Response>, ReddSaverError> {
     // RedGifs has two URL styles:
     //   older: thumbs44.redgifs.com/Token-mobile.mp4?hash=…
     //   newer: thumbs44.redgifs.com/watch/tokenname  OR  redgifs.com/watch/tokenname
