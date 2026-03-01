@@ -503,12 +503,13 @@ impl<'a> Downloader<'a> {
 
         if self.should_download {
             if self.ytdlp_available {
-                let file_name = self.generate_file_name(
-                    &media_url,
-                    "mp4",
-                    "0",
-                    post_metadata,
-                );
+                let file_name = self.generate_file_name(&media_url, "mp4", "0", post_metadata);
+
+                if check_path_present(&file_name) {
+                    debug!("Youtube video from url {} already downloaded. Skipping...", media_url);
+                    media_skipped += 1;
+                    return Ok((media_downloaded, media_skipped));
+                }
 
                 let mut command = Command::new("yt-dlp");
                 command
@@ -522,15 +523,22 @@ impl<'a> Downloader<'a> {
                 debug!("Executing command: {:#?}", command);
                 let output = command.output()?;
 
-                if output.status.success() {
+                if output.status.success() && check_path_present(&file_name) {
                     info!("Successfully downloaded youtube video: {} to {}", media_url, &file_name);
                     media_downloaded += 1;
+                } else if output.status.success() {
+                    warn!(
+                        "yt-dlp reported success for {} but no file was created at {}",
+                        media_url, file_name
+                    );
+                    media_skipped += 1;
                 } else {
                     warn!("Unable to download youtube video: {}", media_url);
                     media_skipped += 1;
                 }
             } else {
                 warn!("yt-dlp is not installed, skipping youtube video download: {}", media_url);
+                media_skipped += 1;
             }
         } else {
             info!("Media available at URL: {}", &media_url);
