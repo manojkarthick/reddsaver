@@ -142,7 +142,7 @@ impl<'a> User<'a> {
             // during the first call to the API, we would not provide the after query parameter
             // in subsequent calls, we use the value for after from the response of the
             //  previous request and continue doing so till the value of after is null
-            let base_url = format!("https://oauth.reddit.com/user/{}/{}", self.name, listing_type.to_string());
+            let base_url = format!("https://oauth.reddit.com/user/{}/{}", self.name, listing_type);
 
             let mut request = client
                 .get(&base_url)
