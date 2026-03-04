@@ -41,4 +41,6 @@ pub enum ReddSaverError {
     FromStringConversionError(#[from] FromStrError),
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
+    #[error("ffmpeg is required but was not found on PATH. Please install ffmpeg to use reddsaver.")]
+    FfmpegNotFound,
 }

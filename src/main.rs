@@ -248,18 +248,13 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
             "LIMIT = {}",
             effective_limit.map(|n| n.to_string()).unwrap_or_else(|| "unlimited".to_string())
         );
-        info!("FFMPEG AVAILABLE = {}", ffmpeg_available);
         info!("YT-DLP AVAILABLE = {}", ytdlp_available);
 
         return Ok(());
     }
 
     if !ffmpeg_available {
-        warn!(
-            "No ffmpeg Installation available. \
-            Videos hosted by Reddit use separate video and audio streams. \
-            Ffmpeg needs be installed to combine the audio and video into a single mp4."
-        );
+        return Err(ReddSaverError::FfmpegNotFound);
     }
 
     if !ytdlp_available {
@@ -323,7 +318,6 @@ async fn run(matches: ArgMatches) -> Result<(), ReddSaverError> {
         &data_directory,
         &subreddit_filter,
         should_download,
-        ffmpeg_available,
         ytdlp_available,
     );
 
