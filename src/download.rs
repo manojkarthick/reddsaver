@@ -105,7 +105,6 @@ pub struct Downloader<'a> {
     data_directory: &'a str,
     subreddits: &'a Option<Vec<&'a str>>,
     should_download: bool,
-    ffmpeg_available: bool,
     ytdlp_available: bool,
 }
 
@@ -123,7 +122,6 @@ impl<'a> Downloader<'a> {
         data_directory: &'a str,
         subreddits: &'a Option<Vec<&'a str>>,
         should_download: bool,
-        ffmpeg_available: bool,
         ytdlp_available: bool,
     ) -> Downloader<'a> {
         Downloader {
@@ -131,7 +129,6 @@ impl<'a> Downloader<'a> {
             data_directory,
             subreddits,
             should_download,
-            ffmpeg_available,
             ytdlp_available,
         }
     }
@@ -385,66 +382,62 @@ impl<'a> Downloader<'a> {
             && (media_files.len() == 2)
             && (local_skipped < 2)
         {
-            if self.ffmpeg_available {
-                debug!("Assembling components together");
-                let first_url = media_urls.first().expect("checked len == 2");
-                let extension = String::from(first_url.split('.').next_back().unwrap_or("unknown"));
-                // this generates the name of the media without the component indices
-                // this file name is used for saving the ffmpeg combined file
-                let combined_file_name =
-                    self.generate_file_name(first_url, &extension, "0", post_metadata);
+            debug!("Assembling components together");
+            let first_url = media_urls.first().expect("checked len == 2");
+            let extension = String::from(first_url.split('.').next_back().unwrap_or("unknown"));
+            // this generates the name of the media without the component indices
+            // this file name is used for saving the ffmpeg combined file
+            let combined_file_name =
+                self.generate_file_name(first_url, &extension, "0", post_metadata);
 
-                let temporary_dir = tempdir()?;
-                let temporary_file_name = temporary_dir.path().join("combined.mp4");
+            let temporary_dir = tempdir()?;
+            let temporary_file_name = temporary_dir.path().join("combined.mp4");
 
-                if self.should_download {
-                    // if the media is a reddit video and it has two components, then we
-                    // need to assemble them into one file using ffmpeg.
-                    let mut command = Command::new("ffmpeg");
-                    for media_file in &media_files {
-                        command.arg("-i").arg(media_file);
-                    }
-                    command
-                        .arg("-c")
-                        .arg("copy")
-                        .arg("-map")
-                        .arg("1:a")
-                        .arg("-map")
-                        .arg("0:v")
-                        .arg(&temporary_file_name);
-
-                    debug!("Executing command: {:#?}", command);
-                    let output = command.output()?;
-
-                    // check the status code of the ffmpeg command. if the command is unsuccessful,
-                    // display the error and skip combining the media.
-                    if output.status.success() {
-                        debug!(
-                            "Successfully combined into temporary file: {:?}",
-                            temporary_file_name
-                        );
-                        debug!(
-                            "Renaming file: {} -> {}",
-                            temporary_file_name.display(),
-                            combined_file_name
-                        );
-                        fs::rename(&temporary_file_name, &combined_file_name)?;
-                    } else {
-                        // if we encountered an error, we will write logs from ffmpeg into a new log file
-                        let log_file_name =
-                            self.generate_file_name(first_url, "log", "0", post_metadata);
-                        let err = String::from_utf8_lossy(&output.stderr).into_owned();
-                        warn!(
-                            "Could not combine video {} and audio {}. Saving log to: {}",
-                            media_urls.first().expect("checked len == 2"),
-                            media_urls.last().expect("checked len == 2"),
-                            log_file_name
-                        );
-                        fs::write(log_file_name, err)?;
-                    }
+            if self.should_download {
+                // if the media is a reddit video and it has two components, then we
+                // need to assemble them into one file using ffmpeg.
+                let mut command = Command::new("ffmpeg");
+                for media_file in &media_files {
+                    command.arg("-i").arg(media_file);
                 }
-            } else {
-                warn!("Skipping combining the individual components since ffmpeg is not installed");
+                command
+                    .arg("-c")
+                    .arg("copy")
+                    .arg("-map")
+                    .arg("1:a")
+                    .arg("-map")
+                    .arg("0:v")
+                    .arg(&temporary_file_name);
+
+                debug!("Executing command: {:#?}", command);
+                let output = command.output()?;
+
+                // check the status code of the ffmpeg command. if the command is unsuccessful,
+                // display the error and skip combining the media.
+                if output.status.success() {
+                    debug!(
+                        "Successfully combined into temporary file: {:?}",
+                        temporary_file_name
+                    );
+                    debug!(
+                        "Renaming file: {} -> {}",
+                        temporary_file_name.display(),
+                        combined_file_name
+                    );
+                    fs::rename(&temporary_file_name, &combined_file_name)?;
+                } else {
+                    // if we encountered an error, we will write logs from ffmpeg into a new log file
+                    let log_file_name =
+                        self.generate_file_name(first_url, "log", "0", post_metadata);
+                    let err = String::from_utf8_lossy(&output.stderr).into_owned();
+                    warn!(
+                        "Could not combine video {} and audio {}. Saving log to: {}",
+                        media_urls.first().expect("checked len == 2"),
+                        media_urls.last().expect("checked len == 2"),
+                        log_file_name
+                    );
+                    fs::write(log_file_name, err)?;
+                }
             }
         } else {
             debug!("Skipping combining reddit video.");
@@ -520,7 +513,10 @@ impl<'a> Downloader<'a> {
         let mut media_skipped = 0;
 
         let index = "0";
-        let extension = if media_type == MediaType::RedgifsVideo {
+        let is_gif = matches!(media_type, MediaType::RedditGif | MediaType::GiphyGif)
+            && media_url.ends_with(".gif");
+
+        let extension = if media_type == MediaType::RedgifsVideo || is_gif {
             String::from("mp4")
         } else {
             String::from(media_url.split('.').next_back().unwrap_or("unknown")).replace("/", "_")
@@ -529,14 +525,43 @@ impl<'a> Downloader<'a> {
         let file_name = self.generate_file_name(media_url, &extension, index, post_metadata);
 
         if self.should_download {
-            let status = save_or_skip(media_url, &file_name);
-            // update the summary statistics based on the status
-            match status.await? {
-                MediaStatus::Downloaded => {
-                    media_downloaded += 1;
-                }
-                MediaStatus::Skipped => {
+            if is_gif {
+                if check_path_present(&file_name) {
+                    debug!("Media from url {} already downloaded. Skipping...", media_url);
                     media_skipped += 1;
+                } else {
+                    // download the GIF to a temp directory, convert to MP4,
+                    // then move to the final destination
+                    let temporary_dir = tempdir()?;
+                    let gif_temp_path = temporary_dir.path().join("source.gif");
+                    let downloaded = download_media(
+                        gif_temp_path.to_str().expect("valid temp path"),
+                        media_url,
+                    )
+                    .await?;
+                    if downloaded {
+                        if convert_gif_to_mp4(
+                            gif_temp_path.to_str().expect("valid temp path"),
+                            &file_name,
+                        )? {
+                            media_downloaded += 1;
+                        } else {
+                            media_skipped += 1;
+                        }
+                    } else {
+                        media_skipped += 1;
+                    }
+                }
+            } else {
+                let status = save_or_skip(media_url, &file_name);
+                // update the summary statistics based on the status
+                match status.await? {
+                    MediaStatus::Downloaded => {
+                        media_downloaded += 1;
+                    }
+                    MediaStatus::Skipped => {
+                        media_skipped += 1;
+                    }
                 }
             }
         } else {
@@ -625,6 +650,40 @@ async fn download_media(file_name: &str, url: &str) -> Result<bool, ReddSaverErr
     }
 
     Ok(status)
+}
+
+/// Convert a GIF file on disk to MP4 using ffmpeg, replacing the original.
+/// Returns true if conversion succeeded, false if it failed.
+fn convert_gif_to_mp4(gif_path: &str, mp4_path: &str) -> Result<bool, ReddSaverError> {
+    let temporary_dir = tempdir()?;
+    let temporary_file = temporary_dir.path().join("converted.mp4");
+
+    let output = Command::new("ffmpeg")
+        .arg("-i")
+        .arg(gif_path)
+        .arg("-movflags")
+        .arg("faststart")
+        .arg("-pix_fmt")
+        .arg("yuv420p")
+        .arg("-vf")
+        .arg("scale=trunc(iw/2)*2:trunc(ih/2)*2")
+        .arg(&temporary_file)
+        .output()?;
+
+    if output.status.success() {
+        // ensure the parent directory for the final mp4 exists
+        let directory = Path::new(mp4_path)
+            .parent()
+            .ok_or(ReddSaverError::CouldNotCreateDirectory)?;
+        fs::create_dir_all(directory)?;
+        fs::rename(&temporary_file, mp4_path)?;
+        debug!("Successfully converted GIF to MP4: {}", mp4_path);
+        Ok(true)
+    } else {
+        let err = String::from_utf8_lossy(&output.stderr);
+        warn!("ffmpeg GIF->MP4 conversion failed for {}: {}", gif_path, err);
+        Ok(false)
+    }
 }
 
 /// Convert Gfycat/Redgifs GIFs into mp4 URLs for download
@@ -920,4 +979,74 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
     }
 
     Ok(media)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    /// Create a minimal valid GIF (4x4 pixel) for testing.
+    /// H.264 requires even dimensions, so 4x4 is the smallest practical size.
+    fn create_test_gif(path: &std::path::Path) {
+        let gif_bytes: &[u8] = &[
+            0x47, 0x49, 0x46, 0x38, 0x39, 0x61, // GIF89a
+            0x04, 0x00, 0x04, 0x00, // 4x4
+            0x80, 0x00, 0x00, // GCT flag, 2 colors
+            0x00, 0x00, 0x00, // color 0: black
+            0xFF, 0xFF, 0xFF, // color 1: white
+            0x2C, 0x00, 0x00, 0x00, 0x00, // image descriptor
+            0x04, 0x00, 0x04, 0x00, 0x00, // 4x4, no LCT
+            0x02, // LZW min code size
+            0x05, 0x00, 0x01, 0x04, 0x04, 0x01, // compressed data sub-block
+            0x00, // block terminator
+            0x3B, // trailer
+        ];
+        fs::write(path, gif_bytes).unwrap();
+    }
+
+    #[test]
+    fn convert_gif_to_mp4_produces_mp4_file() {
+        if !crate::utils::application_present(String::from("ffmpeg")) {
+            eprintln!("skipping test: ffmpeg not available");
+            return;
+        }
+
+        let dir = tempdir().unwrap();
+        let gif_path = dir.path().join("test.gif");
+        let mp4_path = dir.path().join("test.mp4");
+
+        create_test_gif(&gif_path);
+        assert!(gif_path.exists());
+
+        let result =
+            convert_gif_to_mp4(gif_path.to_str().unwrap(), mp4_path.to_str().unwrap()).unwrap();
+
+        assert!(result);
+        assert!(mp4_path.exists());
+        // the original GIF should no longer exist (it was in the temp dir passed to ffmpeg)
+        // but our convert function doesn't delete gif_path — the caller's tempdir handles that
+    }
+
+    #[test]
+    fn convert_gif_to_mp4_returns_false_for_invalid_input() {
+        if !crate::utils::application_present(String::from("ffmpeg")) {
+            eprintln!("skipping test: ffmpeg not available");
+            return;
+        }
+
+        let dir = tempdir().unwrap();
+        let bad_path = dir.path().join("not_a_gif.gif");
+        let mp4_path = dir.path().join("output.mp4");
+
+        // write garbage data — ffmpeg should fail
+        fs::write(&bad_path, b"this is not a gif").unwrap();
+
+        let result =
+            convert_gif_to_mp4(bad_path.to_str().unwrap(), mp4_path.to_str().unwrap()).unwrap();
+
+        assert!(!result);
+        assert!(!mp4_path.exists());
+    }
 }

@@ -164,6 +164,19 @@ mod tests {
         let nonexistent = dir.path().join("does-not-exist");
         assert!(!check_path_present(nonexistent.to_str().unwrap()));
     }
+
+    #[test]
+    fn application_present_returns_true_for_known_binary() {
+        // "ls" is available on all Unix systems
+        assert!(application_present(String::from("ls")));
+    }
+
+    #[test]
+    fn application_present_returns_false_for_nonexistent_binary() {
+        assert!(!application_present(String::from(
+            "this_binary_does_not_exist_12345"
+        )));
+    }
 }
 
 /// Check if the given URL contains an MP4 track using the content type
