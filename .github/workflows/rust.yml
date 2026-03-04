@@ -22,31 +22,51 @@ jobs:
         with:
           command: check
 
-  publish:
+  precheck:
     if: startsWith(github.ref, 'refs/tags/')
-    name: Publish for ${{ matrix.os }}
+    runs-on: ubuntu-latest
+    outputs:
+      VERSION: ${{ steps.vars.outputs.VERSION }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Version
+        id: vars
+        shell: bash
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          echo ::set-output name=VERSION::$(echo "$version")
+
+  publish:
+    needs: [ precheck ]
+    if: startsWith(github.ref, 'refs/tags/')
+    name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: true
       matrix:
-        name: [
-            linux,
-            windows,
-            macos
-        ]
-
         include:
-          - name: linux
+          - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact_name: target/release/reddsaver
-            asset_name: reddsaver-linux-amd64
-          - name: windows
-            os: windows-latest
-            artifact_name: target/release/reddsaver.exe
-            asset_name: reddsaver-windows-amd64
-          - name: macos
+            use-cross: false
+            jreleaser_platform: linux-x86_64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            use-cross: true
+            jreleaser_platform: linux-aarch_64
+          - target: x86_64-apple-darwin
             os: macos-latest
-            artifact_name: target/release/reddsaver
-            asset_name: reddsaver-macos-amd64
+            use-cross: false
+            jreleaser_platform: osx-x86_64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            use-cross: false
+            jreleaser_platform: osx-aarch_64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            use-cross: false
+            jreleaser_platform: windows-x86_64
 
     steps:
       - name: Checkout repository
@@ -57,15 +77,68 @@ jobs:
         with:
           profile: minimal
           toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
 
       - name: Build
-        run: cargo build --release --locked
-
-      - name: Upload binaries to release
-        uses: svenstaro/upload-release-action@v2
+        uses: actions-rs/cargo@v1
         with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ${{ matrix.artifact_name }}
-          asset_name: ${{ matrix.asset_name }}
-          tag: ${{ github.ref }}
-          overwrite: true
+          use-cross: ${{ matrix.use-cross }}
+          command: build
+          args: --locked --release --target=${{ matrix.target }}
+
+      - name: Assemble
+        uses: jreleaser/release-action@v2
+        with:
+          version: early-access
+          arguments: assemble
+        env:
+          JRELEASER_PROJECT_VERSION: ${{ needs.precheck.outputs.VERSION }}
+          JRELEASER_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JRELEASER_PLATFORM_OVERRIDE: ${{ matrix.jreleaser_platform }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          retention-days: 1
+          name: artifacts
+          path: |
+            out/jreleaser/assemble/reddsaver/archive/*.zip
+
+      - name: JReleaser output
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: jreleaser-output-${{ matrix.target }}
+          path: |
+            out/jreleaser/trace.log
+            out/jreleaser/output.properties
+
+  release:
+    needs: [ precheck, publish ]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+
+      - name: Release
+        uses: jreleaser/release-action@v2
+        with:
+          version: early-access
+          arguments: full-release -PartifactsDir=artifacts -PskipArchiveResolver
+        env:
+          JRELEASER_PROJECT_VERSION: ${{ needs.precheck.outputs.VERSION }}
+          JRELEASER_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: JReleaser output
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: output-release-logs
+          path: |
+            out/jreleaser/trace.log
+            out/jreleaser/output.properties
