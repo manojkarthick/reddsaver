@@ -1,6 +1,6 @@
 # Reddsaver ![build](https://github.com/manojkarthick/reddsaver/workflows/build/badge.svg) [![Crates.io](https://img.shields.io/crates/v/reddsaver.svg)](https://crates.io/crates/reddsaver)
 
-Command line tool to download saved, upvoted, or subreddit feed media from Reddit.
+Command line tool to download saved, upvoted, subreddit feed, or user-submitted media from Reddit.
 
 **Supported sources:**
 | Source | Media types |
@@ -147,6 +147,15 @@ reddsaver -e reddsaver.env -d data --dry-run
 
 # Restrict saved/upvoted downloads to specific subreddits
 reddsaver -e reddsaver.env -d data --subreddits pics,aww,videos
+
+# Download media from a specific user's submissions
+reddsaver -e reddsaver.env -d data --mode user --user SomeUsername
+
+# Download a user's top posts of the month
+reddsaver -e reddsaver.env -d data --mode user --user SomeUsername --listing-type top --time-filter month
+
+# Download a user's newest submissions with a limit
+reddsaver -e reddsaver.env -d data --mode user --user SomeUsername --listing-type new --limit 100
 ```
 
 On subsequent runs, files that already exist in the data directory are skipped automatically.
@@ -164,10 +173,11 @@ Options:
   -s, --show-config              Show the current config being used
   -r, --dry-run                  Dry run and print the URLs of saved media to download
   -S, --subreddits <SUBREDDITS>  Subreddits to filter (saved/upvoted) or fetch from (feed mode)
-  -m, --mode <MODE>              Operation mode [default: saved] [possible values: saved, upvoted, feed]
+  -m, --mode <MODE>              Operation mode [default: saved] [possible values: saved, upvoted, feed, user]
+  -u, --user <USERNAME>          Reddit username to download submissions from (required for user mode)
   -t, --listing-type <TYPE>      Subreddit listing sort [default: hot] [possible values: hot, best, rising, top, new, controversial]
   -T, --time-filter <PERIOD>     Time period for top/controversial listings [default: all] [possible values: hour, day, week, month, year, all]
-  -l, --limit <LIMIT>            Max posts to process per source (default: unlimited for saved/upvoted, 500 for feed)
+  -l, --limit <LIMIT>            Max posts to process per source (default: unlimited for saved/upvoted, 500 for feed/user)
   -h, --help                     Print help
   -V, --version                  Print version
 ```
@@ -179,10 +189,15 @@ Options:
 | `saved` | `--mode saved` (default) | Download media from your saved posts |
 | `upvoted` | `--mode upvoted` | Download media from your upvoted posts |
 | `feed` | `--mode feed` | Download media from a subreddit's listing feed |
+| `user` | `--mode user --user <USERNAME>` | Download media from a specific user's submissions |
 
 ### Feed mode options
 
-`--listing-type` and `--time-filter` are only valid with `--mode feed`. `--subreddits` is required in feed mode and specifies which subreddit(s) to fetch from. The `--limit` defaults to **500 per subreddit**.
+`--listing-type` and `--time-filter` are only valid with `--mode feed` or `--mode user`. `--subreddits` is required in feed mode and specifies which subreddit(s) to fetch from. The `--limit` defaults to **500 per subreddit**.
+
+### User mode options
+
+`--user` is required and specifies the Reddit username whose public submissions to download. Supports the same `--listing-type` and `--time-filter` options as feed mode. The `--limit` defaults to **500**.
 
 | Listing type | Time filter applies? | Description |
 |---|---|---|
@@ -232,7 +247,37 @@ Runs a common set of `top` downloads for a single subreddit:
 - `day` with limit `25`
 
 ```shell
-./scripts/download_top_presets.sh --env-file zzxx.env --subreddit SkinnyWithAbs --data-dir ~/Downloads/Reddit
+./scripts/download_top_presets.sh --env-file test.env --subreddit aww --data-dir ~/Downloads/Reddit
+```
+
+### convert_gifs.sh
+
+Recursively finds all `.gif` files in a directory and converts them to MP4 using ffmpeg. The original GIF is removed after a successful conversion. Useful for converting GIFs that were downloaded before the built-in GIF-to-MP4 conversion was added.
+
+```shell
+# Convert all GIFs in the data directory
+./scripts/convert_gifs.sh data/
+
+# Dry run — list GIFs that would be converted
+./scripts/convert_gifs.sh --dry-run data/
+
+# Run with 4 parallel ffmpeg workers
+./scripts/convert_gifs.sh --jobs 4 data/
+```
+
+### compress_gifs.sh
+
+Recursively finds GIFs above a size threshold and compresses them in-place using [gifsicle](https://www.lcdf.org/gifsicle/) with maximum optimization (`-O3`). Useful if you prefer to keep GIFs as-is but want to reduce their size.
+
+```shell
+# Compress GIFs larger than 10 MB (default threshold)
+./scripts/compress_gifs.sh data/
+
+# Compress GIFs larger than 5 MB
+./scripts/compress_gifs.sh --threshold 5 data/
+
+# Dry run — list files that would be compressed
+./scripts/compress_gifs.sh --dry-run data/
 ```
 
 ## Download summary
