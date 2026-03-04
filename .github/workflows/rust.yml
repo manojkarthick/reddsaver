@@ -98,16 +98,16 @@ jobs:
           JRELEASER_PLATFORM_OVERRIDE: ${{ matrix.jreleaser_platform }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           retention-days: 1
-          name: artifacts
+          name: artifacts-${{ matrix.target }}
           path: |
             out/jreleaser/assemble/reddsaver/archive/*.zip
 
       - name: JReleaser output
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: jreleaser-output-${{ matrix.target }}
           path: |
@@ -123,7 +123,11 @@ jobs:
         uses: actions/checkout@v1
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
+        with:
+          pattern: artifacts-*
+          path: artifacts
+          merge-multiple: true
 
       - name: Release
         uses: jreleaser/release-action@v2
@@ -136,7 +140,7 @@ jobs:
 
       - name: JReleaser output
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: output-release-logs
           path: |
