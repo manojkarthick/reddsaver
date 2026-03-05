@@ -20,5 +20,7 @@ RUN apt-get update && \
 
 WORKDIR /app
 COPY --from=builder /app/target/release/reddsaver /app/reddsaver
+COPY scripts/ /app/scripts/
+RUN chmod +x /app/scripts/*.sh
 
 ENTRYPOINT ["/app/reddsaver"]
