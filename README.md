@@ -27,13 +27,6 @@ Install from https://github.com/yt-dlp/yt-dlp or via your package manager.
 
 Download a pre-built binary for your platform from the [releases page](https://github.com/manojkarthick/reddsaver/releases).
 
-### MacPorts
-
-```shell
-sudo port selfupdate
-sudo port install reddsaver
-```
-
 ### Homebrew
 
 ```shell
@@ -41,28 +34,10 @@ brew tap manojkarthick/reddsaver
 brew install reddsaver
 ```
 
-### Arch Linux
-
-```shell
-yay -S reddsaver
-```
-
 ### cargo
 
 ```shell
 cargo install reddsaver
-```
-
-### nix
-
-```shell
-nix-env --install reddsaver
-```
-
-Or via [home-manager](https://github.com/nix-community/home-manager):
-
-```nix
-home.packages = [ pkgs.reddsaver ];
 ```
 
 ### Build from source
