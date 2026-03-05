@@ -849,11 +849,14 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
         // reddit image galleries
         if url.contains(REDDIT_DOMAIN) && url.contains(REDDIT_GALLERY_PATH) {
             if let Some(gallery) = gallery_info {
-                // collect all the URLs for the images in the album
+                // collect all the URLs for the images in the album, separating
+                // GIFs from other image types so GIFs go through the MP4 conversion path
                 let mut image_urls = Vec::new();
+                let mut gif_urls = Vec::new();
                 for item in gallery.items.iter() {
                     // derive the extension from media_metadata ("m" is the MIME type,
-                    // e.g. "image/jpg", "image/png", "image/webp"). Fall back to "jpg".
+                    // e.g. "image/jpg", "image/png", "image/webp", "image/gif").
+                    // Fall back to "jpg".
                     let ext = data.media_metadata
                         .as_ref()
                         .and_then(|mm| mm.get(&item.media_id))
@@ -862,15 +865,26 @@ async fn get_media(data: &PostData) -> Result<Vec<SupportedMedia>, ReddSaverErro
                         .and_then(|mime| mime.split('/').next_back())
                         .map(|sub| if sub == "jpeg" { "jpg" } else { sub })
                         .unwrap_or("jpg");
-                    let image_url = format!(
+                    let item_url = format!(
                         "https://{}/{}.{}",
                         REDDIT_IMAGE_SUBDOMAIN, item.media_id, ext
                     );
-                    image_urls.push(image_url);
+                    if ext == GIF_EXTENSION {
+                        gif_urls.push(item_url);
+                    } else {
+                        image_urls.push(item_url);
+                    }
                 }
-                let supported_media =
-                    SupportedMedia { components: image_urls, media_type: MediaType::RedditImage };
-                media.push(supported_media);
+                if !image_urls.is_empty() {
+                    let supported_media =
+                        SupportedMedia { components: image_urls, media_type: MediaType::RedditImage };
+                    media.push(supported_media);
+                }
+                if !gif_urls.is_empty() {
+                    let supported_media =
+                        SupportedMedia { components: gif_urls, media_type: MediaType::RedditGif };
+                    media.push(supported_media);
+                }
             }
         }
 
