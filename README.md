@@ -23,6 +23,10 @@ Install from https://github.com/yt-dlp/yt-dlp or via your package manager.
 
 ## Installation
 
+### Release binaries
+
+Download a pre-built binary for your platform from the [releases page](https://github.com/manojkarthick/reddsaver/releases).
+
 ### Homebrew
 
 ```shell
@@ -34,6 +38,27 @@ brew install reddsaver
 
 ```shell
 cargo install reddsaver
+```
+
+### Build from source
+
+Requires a current stable Rust toolchain with Cargo support for lock file version 4.
+If `cargo build` fails with a lock file version error, upgrade Rust and Cargo first.
+
+```shell
+git clone https://github.com/manojkarthick/reddsaver.git
+cargo build --release
+./target/release/reddsaver
+```
+
+### Docker
+
+```shell
+mkdir -pv data/
+docker run --rm \
+    --volume="$PWD/data:/app/data" \
+    --volume="$PWD/reddsaver.env:/app/reddsaver.env" \
+    ghcr.io/manojkarthick/reddsaver:latest -d /app/data -e /app/reddsaver.env
 ```
 
 ## Setup
