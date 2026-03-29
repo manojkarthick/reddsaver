@@ -69,38 +69,30 @@ if [[ ! -f "$env_file" ]]; then
     exit 1
 fi
 
-run_top_preset() {
-    local period="$1"
-    local limit="$2"
-
-    echo "Running top/${period} for u/${username} (limit ${limit})"
-    "$reddsaver_bin" \
-        --from-env "$env_file" \
-        --mode user \
-        --user "$username" \
-        --listing-type top \
-        --time-filter "$period" \
-        --limit "$limit" \
-        --data-dir "$data_dir"
-}
-
 run_preset() {
     local listing_type="$1"
     local limit="$2"
+    local period="${3:-}"
 
-    echo "Running ${listing_type} for u/${username} (limit ${limit})"
-    "$reddsaver_bin" \
-        --from-env "$env_file" \
-        --mode user \
-        --user "$username" \
-        --listing-type "$listing_type" \
-        --limit "$limit" \
+    local label="$listing_type"
+    [[ -n "$period" ]] && label="${listing_type}/${period}"
+    echo "Running ${label} for u/${username} (limit ${limit})"
+
+    local args=(
+        --from-env "$env_file"
+        --mode user
+        --user "$username"
+        --listing-type "$listing_type"
+        --limit "$limit"
         --data-dir "$data_dir"
+    )
+    [[ -n "$period" ]] && args+=(--time-filter "$period")
+    "$reddsaver_bin" "${args[@]}"
 }
 
-run_top_preset all  1000
-run_top_preset year  500
-run_top_preset month 250
-run_top_preset day    25
+run_preset top 1000 all
+run_preset top  500 year
+run_preset top  250 month
+run_preset top   25 day
 run_preset new  1000
 run_preset best 1000
